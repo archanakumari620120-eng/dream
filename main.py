@@ -1,125 +1,100 @@
-import os
-import google.generativeai as genai
+import os, time, json, base64, requests, traceback
+from pathlib import Path
+from moviepy.editor import ImageClip
 from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request as GoogleRequest
 from googleapiclient.discovery import build
-import json
-import random
-import time
-import requests
-from moviepy.editor import *
+from googleapiclient.http import MediaFileUpload
 
-# --- Configuration from GitHub Secrets ---
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-TOKEN_JSON_STR = os.getenv("TOKEN_JSON")
+OUTPUTS = Path("outputs")
+OUTPUTS.mkdir(exist_ok=True)
 
-# Gemini AI Setup
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-pro')
+# Secrets
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+TOKEN_JSON = "token.json"  # tumhare repo me rakha hoga
 
-# YouTube API Setup
-YOUTUBE_API_SERVICE_NAME = "youtube"
-YOUTUBE_API_VERSION = "v3"
-SCOPES = ['https://www.googleapis.com/auth/youtube.upload']
+def log(msg):
+    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}", flush=True)
 
-def get_authenticated_service():
-    """Authenticates with YouTube using the token from GitHub Secrets."""
-    creds_info = json.loads(TOKEN_JSON_STR)
-    credentials = Credentials.from_authorized_user_info(info=creds_info, scopes=SCOPES)
-    return build(YOUTUBE_API_SERVICE_NAME, YOUTUBE_API_VERSION, credentials=credentials)
-
-def generate_video_info_with_gemini():
-    """Generates unique video details (title, description, tags) using Gemini AI."""
-    prompt = "Generate a creative and engaging YouTube video concept. The video should be a fun fact, a simple life hack, or a motivational thought for a general audience. Provide a concise title, a detailed description, and a list of 5-7 relevant tags and 3 hashtags. The output format should be: Title:..., Description:..., Tags:..., Hashtags:..."
-    
-    response = model.generate_content(prompt)
-    generated_text = response.text
-    print(f"Gemini AI Response:\n{generated_text}\n")
-
-    # Simple parsing to extract the required info
+# === 1. Gemini Image Generate ===
+def generate_image(prompt):
     try:
-        title = generated_text.split("Title:")[1].split("Description:")[0].strip()
-        description = generated_text.split("Description:")[1].split("Tags:")[0].strip()
-        tags_str = generated_text.split("Tags:")[1].split("Hashtags:")[0].strip()
-        hashtags_str = generated_text.split("Hashtags:")[1].strip()
-
-        tags = [tag.strip() for tag in tags_str.split(',') if tag.strip()]
-        
-        return title, description, tags, hashtags_str
-
-    except IndexError:
-        print("Parsing failed, using fallback values.")
-        unique_id = int(time.time())
-        return (
-            f"AI Generated Video {unique_id}",
-            "An interesting video generated automatically by an AI model!",
-            ["AI", "Daily Video", "Gemini AI"],
-            "#aigenerated #dailyvideos #gemini"
-        )
-
-def create_video_from_script(title, description):
-    """
-    Generates a video from a given script. 
-    This is a placeholder function. In a real-world scenario, you would
-    integrate a video generation API like Veo, Sora, or Pika.
-    """
-    print("Creating video from script...")
-    
-    # Create a simple video with text and a random background color
-    bg_color = random.choice(['#1e1e1e', '#2c3e50', '#8e44ad', '#3498db', '#2ecc71'])
-    video_text = f"{title}\n\n{description}"
-    
-    txt_clip = TextClip(video_text, fontsize=50, color='white', bg_color=bg_color,
-                        size=(1920, 1080), method='caption').set_duration(30)
-    
-    output_file = f"ai_generated_video_{int(time.time())}.mp4"
-    txt_clip.write_videofile(output_file, fps=24, codec="libx264")
-    
-    print(f"Video saved as {output_file}")
-    return output_file
-
-def upload_video_to_youtube(youtube, file_path, title, description, tags, hashtags):
-    """Uploads the video to YouTube."""
-    full_description = f"{description}\n\n{' '.join(hashtags.split())}"
-    
-    body = {
-        'snippet': {
-            'title': title,
-            'description': full_description,
-            'tags': tags,
-            'categoryId': '22'
-        },
-        'status': {
-            'privacyStatus': 'public'
+        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+        headers = {
+            "Content-Type": "application/json",
+            "x-goog-api-key": GEMINI_API_KEY
         }
-    }
+        body = {
+            "contents": [{"parts": [{"text": f"Generate an image of: {prompt}"}]}],
+            "generationConfig": {"responseMimeType": "image/png"}
+        }
+        r = requests.post(url, headers=headers, json=body, timeout=30)
+        r.raise_for_status()
+        data = r.json()
+        img_b64 = data["candidates"][0]["content"]["parts"][0]["inlineData"]["data"]
+        img_bytes = base64.b64decode(img_b64)
+        path = OUTPUTS / f"img_{int(time.time())}.png"
+        path.write_bytes(img_bytes)
+        return str(path)
+    except Exception as e:
+        log(f"Image gen error: {e}\n{traceback.format_exc()}")
+        return None
 
-    insert_request = youtube.videos().insert(
-        part="snippet,status",
-        body=body,
-        media_body=file_path
-    )
-    
-    print(f"Uploading video with title: {title}")
-    response = insert_request.execute()
-    print(f"Video uploaded successfully! Video ID: {response.get('id')}")
-    return response
+# === 2. Image → Video ===
+def build_video_from_image(img_path, duration=10):
+    try:
+        clip = ImageClip(img_path).set_duration(duration)
+        out = OUTPUTS / f"video_{int(time.time())}.mp4"
+        clip.write_videofile(str(out), fps=24, codec="libx264")
+        return str(out)
+    except Exception as e:
+        log(f"Video build error: {e}")
+        return None
+
+# === 3. Upload to YouTube ===
+def upload_to_youtube(video_path, title="AI Short", tags=["AI","shorts"]):
+    try:
+        creds = Credentials.from_authorized_user_file(TOKEN_JSON, scopes=["https://www.googleapis.com/auth/youtube.upload"])
+        if not creds.valid:
+            creds.refresh(GoogleRequest())
+            with open(TOKEN_JSON, "w") as f:
+                f.write(creds.to_json())
+        yt = build("youtube", "v3", credentials=creds)
+        body = {
+            "snippet": {
+                "title": title,
+                "description": title,
+                "tags": tags
+            },
+            "status": {"privacyStatus": "public"}
+        }
+        media = MediaFileUpload(video_path, resumable=True)
+        req = yt.videos().insert(part="snippet,status", body=body, media_body=media)
+        resp = None
+        while True:
+            status, resp = req.next_chunk()
+            if resp:
+                break
+        log(f"✅ Uploaded video id: {resp.get('id')}")
+        return True
+    except Exception as e:
+        log(f"Upload error: {e}\n{traceback.format_exc()}")
+        return False
+
+def main():
+    log("=== Job Start ===")
+    prompt = "A futuristic city skyline at night with neon lights"
+    img = generate_image(prompt)
+    if not img:
+        log("Image failed")
+        return
+    video = build_video_from_image(img)
+    if not video:
+        log("Video failed")
+        return
+    upload_to_youtube(video, title="AI Futuristic City #shorts")
+    log("=== Job End ===")
 
 if __name__ == "__main__":
-    try:
-        # Step 1: Get YouTube authenticated service
-        youtube = get_authenticated_service()
-        
-        # Step 2: Generate unique video details using Gemini
-        title, description, tags, hashtags = generate_video_info_with_gemini()
-        
-        # Step 3: Create the video file
-        video_file = create_video_from_script(title, description)
-        
-        # Step 4: Upload the video to YouTube
-        upload_video_to_youtube(youtube, video_file, title, description, tags, hashtags)
-        
-        print("Video generation and upload process completed successfully.")
-
-    except Exception as e:
-        print(f"An error occurred: {e}")
+    main()
         
