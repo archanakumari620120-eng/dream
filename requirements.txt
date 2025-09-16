@@ -1,0 +1,7 @@
+moviepy
+gTTS
+Pillow
+diffusers
+torch
+transformers
+google-api-python-client
