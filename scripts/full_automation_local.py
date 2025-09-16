@@ -1,7 +1,7 @@
 import os, json, time
 from moviepy.editor import ImageClip, AudioFileClip
 from gtts import gTTS
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 from concurrent.futures import ThreadPoolExecutor
@@ -24,12 +24,17 @@ video_count = config["video_count"]
 video_duration = config["video_duration"]
 auto_upload = config.get("auto_upload", True)
 
-# VRAM-safe Stable Diffusion
-pipe = StableDiffusionPipeline.from_pretrained("runwayml/stable-diffusion-v1-5", torch_dtype=torch.float16)
-pipe.to("cuda" if torch.cuda.is_available() else "cpu")
-pipe.enable_attention_slicing()  # reduces VRAM usage
+# CPU + GPU safe pipeline
+if torch.cuda.is_available():
+    pipe = StableDiffusionPipeline.from_pretrained("runwayml/stable-diffusion-v1-5", torch_dtype=torch.float16)
+    pipe.to("cuda")
+    pipe.enable_attention_slicing()
+else:
+    pipe = StableDiffusionPipeline.from_pretrained("runwayml/stable-diffusion-v1-5")
+    pipe.to("cpu")
 
-def generate_script(i): return f"Hello viewers! This is YouTube Short #{i} about {topic}."
+def generate_script(i):
+    return f"Hello viewers! This is YouTube Short #{i} about {topic}."
 
 def generate_image(i):
     prompt = f"Viral YouTube Short image about {topic}"
@@ -91,3 +96,4 @@ def run_automation():
 
 if __name__ == "__main__":
     run_automation()
+    
