@@ -1,0 +1,6 @@
+moviepy
+pyttsx3
+Pillow
+schedule
+requests
+google-api-python-client
