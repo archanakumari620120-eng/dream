@@ -24,16 +24,20 @@ video_count = config["video_count"]
 video_duration = config["video_duration"]
 auto_upload = config.get("auto_upload", True)
 
-pipe = StableDiffusionPipeline.from_pretrained("runwayml/stable-diffusion-v1-5")
+# VRAM-safe Stable Diffusion
+pipe = StableDiffusionPipeline.from_pretrained("runwayml/stable-diffusion-v1-5", torch_dtype=torch.float16)
 pipe.to("cuda" if torch.cuda.is_available() else "cpu")
+pipe.enable_attention_slicing()  # reduces VRAM usage
 
 def generate_script(i): return f"Hello viewers! This is YouTube Short #{i} about {topic}."
 
 def generate_image(i):
     prompt = f"Viral YouTube Short image about {topic}"
-    img = pipe(prompt).images[0]
+    image = pipe(prompt, height=512, width=512).images[0]
+    if image is None:
+        raise ValueError("Image generation failed")
     path = os.path.join(IMAGES_DIR, f"image_{i}.png")
-    img.save(path)
+    image.save(path)
     return path
 
 def generate_voice(i, script):
@@ -52,7 +56,7 @@ def generate_single_video(i):
         script = generate_script(i)
         img = generate_image(i)
         audio = generate_voice(i, script)
-        vid = create_video(i, img, audio)
+        create_video(i, img, audio)
         print(f"✅ Video #{i} created")
     except Exception as e:
         print(f"❌ Video generation failed #{i}: {e}")
