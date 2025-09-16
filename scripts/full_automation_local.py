@@ -1,103 +1,86 @@
-import os
-import random
-from datetime import datetime
-from moviepy.editor import ImageClip, AudioFileClip
-from diffusers import StableDiffusionPipeline
-import torch
-from PIL import Image, ImageDraw
+import os, json, random, traceback
+from moviepy.editor import ImageClip, AudioFileClip, concatenate_videoclips
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
+from google.oauth2.credentials import Credentials
 
-# 📂 Directories
-IMAGES_DIR = "images"
-MUSIC_DIR = "music"
-VIDEOS_DIR = "videos"
+# ----------------- VIDEO GENERATION -----------------
+def safe_index(sequence, idx):
+    """Prevent out of range index"""
+    if idx < 0: return 0
+    if idx >= len(sequence): return len(sequence) - 1
+    return idx
 
-os.makedirs(IMAGES_DIR, exist_ok=True)
-os.makedirs(MUSIC_DIR, exist_ok=True)
-os.makedirs(VIDEOS_DIR, exist_ok=True)
-
-# 🎯 Video config
-video_duration = 10
-topic = "Motivational Quotes"
-
-# 🤖 AI pipeline setup
-device = "cuda" if torch.cuda.is_available() else "cpu"
-pipe = StableDiffusionPipeline.from_pretrained(
-    "runwayml/stable-diffusion-v1-5",
-    torch_dtype=torch.float32  # ✅ float16 hata diya (CPU ke liye safe)
-).to(device)
-
-
-# 🖼️ Image generation with fallback
-def generate_image(i):
+def generate_video(images_folder, music_folder, output_file="final.mp4"):
     try:
-        prompt = f"Viral YouTube Short image about {topic}"
-        result = pipe(prompt, height=512, width=512, num_inference_steps=20)
+        images = [os.path.join(images_folder, f) for f in os.listdir(images_folder) if f.lower().endswith((".jpg",".png"))]
+        musics = [os.path.join(music_folder, f) for f in os.listdir(music_folder) if f.lower().endswith((".mp3",".wav"))]
 
-        if result and hasattr(result, "images") and len(result.images) > 0:
-            image = result.images[0]
+        if not images:
+            raise Exception("No images found in folder")
+        if not musics:
+            raise Exception("No music found in folder")
+
+        # Safe random pick with index clipping
+        img_idx = safe_index(images, random.randint(0, len(images)))
+        image = images[img_idx]
+
+        music_file = random.choice(musics)
+
+        # Create video clip
+        img_clip = ImageClip(image).set_duration(15).resize((1080,1920))
+
+        # Avoid NoneType in Audio
+        if os.path.exists(music_file):
+            audio_clip = AudioFileClip(music_file).volumex(0.8)
+            video = img_clip.set_audio(audio_clip)
         else:
-            raise ValueError("Diffusion pipeline returned no image")
+            video = img_clip
 
-        path = os.path.join(IMAGES_DIR, f"image_{i}.png")
-        image.save(path)
-        return path
-
-    except Exception as e:
-        print(f"⚠️ Image generation failed for video {i}, fallback: {e}")
-        fallback = Image.new("RGB", (512, 512), color=(0, 0, 0))
-        d = ImageDraw.Draw(fallback)
-        d.text((50, 250), f"Video {i} - {topic}", fill=(255, 255, 255))
-        path = os.path.join(IMAGES_DIR, f"image_fallback_{i}.png")
-        fallback.save(path)
-        return path
-
-
-# 🎵 Select random music
-def get_music():
-    try:
-        files = [f for f in os.listdir(MUSIC_DIR) if f.endswith(".mp3")]
-        if files:
-            return os.path.join(MUSIC_DIR, random.choice(files))
-    except Exception as e:
-        print(f"⚠️ Music selection failed: {e}")
-    return None
-
-
-# 🎬 Video creation with safe checks
-def create_video(i, img, audio):
-    try:
-        path = os.path.join(VIDEOS_DIR, f"video_{i}.mp4")
-        clip = ImageClip(img, duration=video_duration)
-
-        if audio and os.path.exists(audio):
-            audio_clip = AudioFileClip(audio)
-            clip = clip.set_audio(audio_clip)
-        else:
-            print(f"⚠️ No audio for video {i}, video will be silent.")
-
-        clip.write_videofile(path, fps=24, codec="libx264", audio_codec="aac")
-        return path
+        video.write_videofile(output_file, fps=30, codec="libx264", audio_codec="aac")
+        print("✅ Video generated:", output_file)
+        return output_file
 
     except Exception as e:
-        print(f"❌ Video creation failed for video {i}: {e}")
+        print("❌ Video generation failed:")
+        traceback.print_exc()
         return None
 
+# ----------------- YOUTUBE UPLOAD -----------------
+def upload_to_youtube(video_file, title, description, tags):
+    try:
+        token_data = json.loads(os.environ["TOKEN_JSON"])
+        creds = Credentials.from_authorized_user_info(token_data)
+        youtube = build("youtube", "v3", credentials=creds)
 
-# 🚀 Main automation
-def run_automation(total_videos=1):
-    for i in range(total_videos):
-        print(f"\n🎬 Starting video {i}")
-        img = generate_image(i)
-        audio = get_music()
-        video = create_video(i, img, audio)
+        request = youtube.videos().insert(
+            part="snippet,status",
+            body={
+                "snippet": {
+                    "title": title,
+                    "description": description,
+                    "tags": tags,
+                    "categoryId": "22"
+                },
+                "status": {"privacyStatus": "public"}
+            },
+            media_body=MediaFileUpload(video_file)
+        )
+        response = request.execute()
+        print(f"✅ Uploaded: https://youtube.com/watch?v={response['id']}")
 
-        if video:
-            print(f"✅ Video {i} created at {video}")
-        else:
-            print(f"❌ Video {i} failed")
+    except Exception as e:
+        print("❌ Upload failed with error:")
+        traceback.print_exc()
 
-
+# ----------------- MAIN -----------------
 if __name__ == "__main__":
-    run_automation(total_videos=2)
-    print("\n🎉 Automation completed!")
-        
+    video = generate_video("images", "music")
+    if video:
+        upload_to_youtube(video,
+            title="AI Generated Short",
+            description="Automated upload test",
+            tags=["AI","shorts","automation"]
+        )
+    print("🎉 Automation completed")
+                          
