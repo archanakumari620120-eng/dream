@@ -62,7 +62,7 @@ def run_automation():
             executor.submit(generate_single_video, i)
 
     if auto_upload:
-        creds = Credentials.from_authorized_user_file("../token.json", ["https://www.googleapis.com/auth/youtube.upload"])
+        creds = Credentials.from_authorized_user_file("token.json", ["https://www.googleapis.com/auth/youtube.upload"])
         youtube = build("youtube", "v3", credentials=creds)
 
         for i, vf in enumerate(sorted(os.listdir("../assets/videos"))):
