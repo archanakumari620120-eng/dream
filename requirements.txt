@@ -1,7 +1,0 @@
-moviepy==1.0.3
-gTTS
-Pillow
-diffusers
-torch
-transformers
-google-api-python-client
