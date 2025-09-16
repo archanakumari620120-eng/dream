@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from diffusers import StableDiffusionPipeline
 import torch
 
-config = json.load(open("../config.json"))
+config = json.load(open("config.json"))
 topic = config["topic"]
 video_count = config["video_count"]
 video_duration = config["video_duration"]
