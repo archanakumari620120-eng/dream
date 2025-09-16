@@ -1,99 +1,103 @@
-import os, json, time
+import os
+import random
+from datetime import datetime
 from moviepy.editor import ImageClip, AudioFileClip
-from gtts import gTTS
-from PIL import Image
-from googleapiclient.discovery import build
-from google.oauth2.credentials import Credentials
-from concurrent.futures import ThreadPoolExecutor
 from diffusers import StableDiffusionPipeline
 import torch
+from PIL import Image, ImageDraw
 
-BASE_DIR = os.getcwd()
-IMAGES_DIR = os.path.join(BASE_DIR, "assets/images")
-VOICES_DIR = os.path.join(BASE_DIR, "assets/voices")
-VIDEOS_DIR = os.path.join(BASE_DIR, "assets/videos")
-TOKEN_FILE = os.path.join(BASE_DIR, "token.json")
+# 📂 Directories
+IMAGES_DIR = "images"
+MUSIC_DIR = "music"
+VIDEOS_DIR = "videos"
 
 os.makedirs(IMAGES_DIR, exist_ok=True)
-os.makedirs(VOICES_DIR, exist_ok=True)
+os.makedirs(MUSIC_DIR, exist_ok=True)
 os.makedirs(VIDEOS_DIR, exist_ok=True)
 
-config = json.load(open(os.path.join(BASE_DIR,"config.json")))
-topic = config["topic"]
-video_count = config["video_count"]
-video_duration = config["video_duration"]
-auto_upload = config.get("auto_upload", True)
+# 🎯 Video config
+video_duration = 10
+topic = "Motivational Quotes"
 
-# CPU + GPU safe pipeline
-if torch.cuda.is_available():
-    pipe = StableDiffusionPipeline.from_pretrained("runwayml/stable-diffusion-v1-5", torch_dtype=torch.float16)
-    pipe.to("cuda")
-    pipe.enable_attention_slicing()
-else:
-    pipe = StableDiffusionPipeline.from_pretrained("runwayml/stable-diffusion-v1-5")
-    pipe.to("cpu")
+# 🤖 AI pipeline setup
+device = "cuda" if torch.cuda.is_available() else "cpu"
+pipe = StableDiffusionPipeline.from_pretrained(
+    "runwayml/stable-diffusion-v1-5",
+    torch_dtype=torch.float32  # ✅ float16 hata diya (CPU ke liye safe)
+).to(device)
 
-def generate_script(i):
-    return f"Hello viewers! This is YouTube Short #{i} about {topic}."
 
+# 🖼️ Image generation with fallback
 def generate_image(i):
-    prompt = f"Viral YouTube Short image about {topic}"
-    image = pipe(prompt, height=512, width=512).images[0]
-    if image is None:
-        raise ValueError("Image generation failed")
-    path = os.path.join(IMAGES_DIR, f"image_{i}.png")
-    image.save(path)
-    return path
-
-def generate_voice(i, script):
-    path = os.path.join(VOICES_DIR, f"voice_{i}.mp3")
-    gTTS(script).save(path)
-    return path
-
-def create_video(i, img, audio):
-    path = os.path.join(VIDEOS_DIR, f"video_{i}.mp4")
-    clip = ImageClip(img, duration=video_duration).set_audio(AudioFileClip(audio))
-    clip.write_videofile(path, fps=24, codec='libx264', audio_codec='aac')
-    return path
-
-def generate_single_video(i):
     try:
-        script = generate_script(i)
-        img = generate_image(i)
-        audio = generate_voice(i, script)
-        create_video(i, img, audio)
-        print(f"✅ Video #{i} created")
+        prompt = f"Viral YouTube Short image about {topic}"
+        result = pipe(prompt, height=512, width=512, num_inference_steps=20)
+
+        if result and hasattr(result, "images") and len(result.images) > 0:
+            image = result.images[0]
+        else:
+            raise ValueError("Diffusion pipeline returned no image")
+
+        path = os.path.join(IMAGES_DIR, f"image_{i}.png")
+        image.save(path)
+        return path
+
     except Exception as e:
-        print(f"❌ Video generation failed #{i}: {e}")
+        print(f"⚠️ Image generation failed for video {i}, fallback: {e}")
+        fallback = Image.new("RGB", (512, 512), color=(0, 0, 0))
+        d = ImageDraw.Draw(fallback)
+        d.text((50, 250), f"Video {i} - {topic}", fill=(255, 255, 255))
+        path = os.path.join(IMAGES_DIR, f"image_fallback_{i}.png")
+        fallback.save(path)
+        return path
 
-def run_automation():
-    start = time.time()
-    with ThreadPoolExecutor(max_workers=video_count) as ex:
-        for i in range(video_count):
-            ex.submit(generate_single_video, i)
 
-    if auto_upload:
-        try:
-            creds = Credentials.from_authorized_user_file(TOKEN_FILE, ["https://www.googleapis.com/auth/youtube.upload"])
-            yt = build("youtube", "v3", credentials=creds)
-            for i, vf in enumerate(sorted(os.listdir(VIDEOS_DIR))):
-                try:
-                    yt.videos().insert(
-                        part="snippet,status",
-                        body={
-                            "snippet": {"title": f"{topic} Short {i}", "description": f"Check out {topic}!", "tags": ["AI","Tech","Shorts"]},
-                            "status": {"privacyStatus": "public"}
-                        },
-                        media_body=os.path.join(VIDEOS_DIR,vf)
-                    ).execute()
-                    print(f"✅ Uploaded {vf}")
-                except Exception as e:
-                    print(f"❌ Upload failed {vf}: {e}")
-        except Exception as e:
-            print(f"❌ YouTube upload setup failed: {e}")
+# 🎵 Select random music
+def get_music():
+    try:
+        files = [f for f in os.listdir(MUSIC_DIR) if f.endswith(".mp3")]
+        if files:
+            return os.path.join(MUSIC_DIR, random.choice(files))
+    except Exception as e:
+        print(f"⚠️ Music selection failed: {e}")
+    return None
 
-    print(f"🎉 Automation completed in {time.time()-start:.2f}s")
+
+# 🎬 Video creation with safe checks
+def create_video(i, img, audio):
+    try:
+        path = os.path.join(VIDEOS_DIR, f"video_{i}.mp4")
+        clip = ImageClip(img, duration=video_duration)
+
+        if audio and os.path.exists(audio):
+            audio_clip = AudioFileClip(audio)
+            clip = clip.set_audio(audio_clip)
+        else:
+            print(f"⚠️ No audio for video {i}, video will be silent.")
+
+        clip.write_videofile(path, fps=24, codec="libx264", audio_codec="aac")
+        return path
+
+    except Exception as e:
+        print(f"❌ Video creation failed for video {i}: {e}")
+        return None
+
+
+# 🚀 Main automation
+def run_automation(total_videos=1):
+    for i in range(total_videos):
+        print(f"\n🎬 Starting video {i}")
+        img = generate_image(i)
+        audio = get_music()
+        video = create_video(i, img, audio)
+
+        if video:
+            print(f"✅ Video {i} created at {video}")
+        else:
+            print(f"❌ Video {i} failed")
+
 
 if __name__ == "__main__":
-    run_automation()
-    
+    run_automation(total_videos=2)
+    print("\n🎉 Automation completed!")
+        
