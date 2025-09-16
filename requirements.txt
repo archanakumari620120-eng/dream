@@ -1,6 +1,0 @@
-moviepy==1.0.3
-pyttsx3
-Pillow
-schedule
-requests
-google-api-python-client
