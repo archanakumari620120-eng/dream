@@ -5,80 +5,85 @@ from PIL import Image, ImageDraw, ImageFont
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 from concurrent.futures import ThreadPoolExecutor
-
-# AI image imports
 from diffusers import StableDiffusionPipeline
 import torch
 
-config = json.load(open("config.json"))
+BASE_DIR = os.getcwd()
+IMAGES_DIR = os.path.join(BASE_DIR, "assets/images")
+VOICES_DIR = os.path.join(BASE_DIR, "assets/voices")
+VIDEOS_DIR = os.path.join(BASE_DIR, "assets/videos")
+TOKEN_FILE = os.path.join(BASE_DIR, "token.json")
+
+os.makedirs(IMAGES_DIR, exist_ok=True)
+os.makedirs(VOICES_DIR, exist_ok=True)
+os.makedirs(VIDEOS_DIR, exist_ok=True)
+
+config = json.load(open(os.path.join(BASE_DIR,"config.json")))
 topic = config["topic"]
 video_count = config["video_count"]
 video_duration = config["video_duration"]
 auto_upload = config.get("auto_upload", True)
 
-os.makedirs("../assets/images", exist_ok=True)
-os.makedirs("../assets/voices", exist_ok=True)
-os.makedirs("../assets/videos", exist_ok=True)
-
-# Load Stable Diffusion
 pipe = StableDiffusionPipeline.from_pretrained("runwayml/stable-diffusion-v1-5")
 pipe.to("cuda" if torch.cuda.is_available() else "cpu")
 
-def generate_script(index):
-    return f"Hello viewers! This is YouTube Short #{index} about {topic}. Enjoy and subscribe!"
+def generate_script(i): return f"Hello viewers! This is YouTube Short #{i} about {topic}."
 
-def generate_image(index):
-    prompt = f"Viral YouTube Short image about {topic}, realistic, trending style"
-    image = pipe(prompt).images[0]
-    file_path = f"../assets/images/image_{index}.png"
-    image.save(file_path)
-    return file_path
+def generate_image(i):
+    prompt = f"Viral YouTube Short image about {topic}"
+    img = pipe(prompt).images[0]
+    path = os.path.join(IMAGES_DIR, f"image_{i}.png")
+    img.save(path)
+    return path
 
-def generate_voice(index, script):
-    file_path = f"../assets/voices/voice_{index}.mp3"
-    tts = gTTS(script)
-    tts.save(file_path)
-    return file_path
+def generate_voice(i, script):
+    path = os.path.join(VOICES_DIR, f"voice_{i}.mp3")
+    gTTS(script).save(path)
+    return path
 
-def create_video(index, image_file, audio_file):
-    video_file = f"../assets/videos/video_{index}.mp4"
-    clip = ImageClip(image_file, duration=video_duration)
-    audio = AudioFileClip(audio_file)
-    final = clip.set_audio(audio)
-    final.write_videofile(video_file, fps=24, codec='libx264', audio_codec='aac')
-    return video_file
+def create_video(i, img, audio):
+    path = os.path.join(VIDEOS_DIR, f"video_{i}.mp4")
+    clip = ImageClip(img, duration=video_duration).set_audio(AudioFileClip(audio))
+    clip.write_videofile(path, fps=24, codec='libx264', audio_codec='aac')
+    return path
 
-def generate_single_video(index):
-    script = generate_script(index)
-    img_file = generate_image(index)
-    voice_file = generate_voice(index, script)
-    video_file = create_video(index, img_file, voice_file)
-    print(f"✅ Video #{index} created: {video_file}")
+def generate_single_video(i):
+    try:
+        script = generate_script(i)
+        img = generate_image(i)
+        audio = generate_voice(i, script)
+        vid = create_video(i, img, audio)
+        print(f"✅ Video #{i} created")
+    except Exception as e:
+        print(f"❌ Video generation failed #{i}: {e}")
 
 def run_automation():
     start = time.time()
-    with ThreadPoolExecutor(max_workers=video_count) as executor:
+    with ThreadPoolExecutor(max_workers=video_count) as ex:
         for i in range(video_count):
-            executor.submit(generate_single_video, i)
+            ex.submit(generate_single_video, i)
 
     if auto_upload:
-        creds = Credentials.from_authorized_user_file("token.json", ["https://www.googleapis.com/auth/youtube.upload"])
-        youtube = build("youtube", "v3", credentials=creds)
+        try:
+            creds = Credentials.from_authorized_user_file(TOKEN_FILE, ["https://www.googleapis.com/auth/youtube.upload"])
+            yt = build("youtube", "v3", credentials=creds)
+            for i, vf in enumerate(sorted(os.listdir(VIDEOS_DIR))):
+                try:
+                    yt.videos().insert(
+                        part="snippet,status",
+                        body={
+                            "snippet": {"title": f"{topic} Short {i}", "description": f"Check out {topic}!", "tags": ["AI","Tech","Shorts"]},
+                            "status": {"privacyStatus": "public"}
+                        },
+                        media_body=os.path.join(VIDEOS_DIR,vf)
+                    ).execute()
+                    print(f"✅ Uploaded {vf}")
+                except Exception as e:
+                    print(f"❌ Upload failed {vf}: {e}")
+        except Exception as e:
+            print(f"❌ YouTube upload setup failed: {e}")
 
-        for i, vf in enumerate(sorted(os.listdir("../assets/videos"))):
-            request = youtube.videos().insert(
-                part="snippet,status",
-                body={
-                    "snippet": {"title": f"{topic} Short {i}", "description": f"Check out {topic}!", "tags": ["AI","Tech","Shorts"]},
-                    "status": {"privacyStatus": "public"}
-                },
-                media_body=f"../assets/videos/{vf}"
-            )
-            response = request.execute()
-            print(f"Uploaded video: {vf}")
-
-    end = time.time()
-    print(f"🎉 Automation completed in {end-start:.2f} seconds")
+    print(f"🎉 Automation completed in {time.time()-start:.2f}s")
 
 if __name__ == "__main__":
     run_automation()
