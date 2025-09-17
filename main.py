@@ -1,104 +1,101 @@
+
 import os
 import random
-import numpy as np
-from moviepy.editor import *
-from PIL import Image, ImageDraw, ImageFont
+import tempfile
+import json
+from moviepy.editor import ImageClip, AudioFileClip
+from diffusers import StableDiffusionPipeline
+import torch
+from PIL import Image, ImageDraw
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.oauth2.credentials import Credentials
-from diffusers import StableDiffusionPipeline
-import torch
 
-# ------------------ CONFIG ------------------
-VIDEOS_DIR = "videos"
+# Config
+VIDEO_DURATION = 10
+QUOTES_FILE = "quotes.txt"
+
+# Directories
 IMAGES_DIR = "images"
-MUSIC_DIR = "music"
-os.makedirs(VIDEOS_DIR, exist_ok=True)
 os.makedirs(IMAGES_DIR, exist_ok=True)
-os.makedirs(MUSIC_DIR, exist_ok=True)
 
-WIDTH, HEIGHT = 1080, 1920
-VIDEO_DURATION = 15
-
-# ------------------ LOAD QUOTES ------------------
-with open("quotes.txt", "r", encoding="utf-8") as f:
-    QUOTES = [q.strip() for q in f.readlines() if q.strip()]
-
-# ------------------ STABLE DIFFUSION ------------------
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+# Stable Diffusion
+device = "cuda" if torch.cuda.is_available() else "cpu"
 pipe = StableDiffusionPipeline.from_pretrained(
     "runwayml/stable-diffusion-v1-5", torch_dtype=torch.float32
-).to(DEVICE)
+).to(device)
 
-def generate_ai_image(quote, output_path):
-    prompt = f"Ultra realistic cinematic illustration, Indian style, motivational theme: {quote}"
+# Load quotes
+with open(QUOTES_FILE, "r", encoding="utf-8") as f:
+    QUOTES = [line.strip() for line in f if line.strip()]
+
+# Get copyright-free music
+def get_youtube_music():
+    silent_path = "music/silence.mp3"
+    return silent_path if os.path.exists(silent_path) else None
+
+# Generate AI image with fallback
+def generate_image(quote):
     try:
+        prompt = f"Ultra realistic cinematic illustration, Indian style, motivational theme: {quote}"
         result = pipe(prompt, height=512, width=512, num_inference_steps=20)
-        img = result.images[0]
-        img.save(output_path)
-        return output_path
-    except Exception as e:
-        print("⚠️ AI Image generation failed, using fallback black screen:", e)
-        img = Image.new("RGB", (WIDTH, HEIGHT), color=(0, 0, 0))
+        img_path = os.path.join(IMAGES_DIR, "image_tmp.png")
+        result.images[0].save(img_path)
+        return img_path
+    except Exception:
+        img = Image.new("RGB", (512, 512), (0, 0, 0))
         draw = ImageDraw.Draw(img)
-        font = ImageFont.load_default()
-        draw.text((50, HEIGHT//2), quote[:80], fill="white", font=font)
-        img.save(output_path)
-        return output_path
+        draw.text((20, 250), quote[:40], fill=(255, 255, 255))
+        fallback_path = os.path.join(IMAGES_DIR, "image_tmp.png")
+        img.save(fallback_path)
+        return fallback_path
 
-# ------------------ PICK MUSIC ------------------
-def get_music():
-    tracks = [f for f in os.listdir(MUSIC_DIR) if f.endswith((".mp3", ".wav"))]
-    return os.path.join(MUSIC_DIR, random.choice(tracks)) if tracks else None
+# Create temporary video
+def create_video(image_path, audio_path):
+    clip = ImageClip(image_path, duration=VIDEO_DURATION)
+    if audio_path and os.path.exists(audio_path):
+        clip = clip.set_audio(AudioFileClip(audio_path))
+    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+    clip.write_videofile(tmp_file.name, fps=24, codec="libx264", audio_codec="aac")
+    clip.close()
+    return tmp_file.name
 
-# ------------------ CREATE VIDEO ------------------
-def create_quote_video(quote, output_path):
-    img_path = os.path.join(IMAGES_DIR, "ai_image.png")
-    img_path = generate_ai_image(quote, img_path)
-    clip = ImageClip(img_path).set_duration(VIDEO_DURATION).resize((WIDTH, HEIGHT))
-
-    music_file = get_music()
-    if music_file:
-        audio = AudioFileClip(music_file).subclip(0, VIDEO_DURATION)
-        clip = clip.set_audio(audio)
-
-    clip.write_videofile(output_path, fps=24, codec="libx264", audio_codec="aac")
-
-# ------------------ UPLOAD TO YOUTUBE ------------------
-def upload_youtube(video_file, quote):
-    creds = Credentials.from_authorized_user_file("token.json", ["https://www.googleapis.com/auth/youtube.upload"])
+# Upload video to YouTube using secrets
+def upload_youtube(video_path, quote):
+    token_json_str = os.environ.get("TOKEN_JSON")
+    client_secret_str = os.environ.get("CLIENT_SECRET_JSON")
+    if not token_json_str or not client_secret_str:
+        raise ValueError("TOKEN_JSON or CLIENT_SECRET_JSON not set in secrets")
+    
+    creds_dict = json.loads(token_json_str)
+    creds = Credentials.from_authorized_user_info(creds_dict, ["https://www.googleapis.com/auth/youtube.upload"])
+    
     youtube = build("youtube", "v3", credentials=creds)
+
     title = f"{quote[:60]} | Motivational Shorts"
-    description = f"{quote}\n#motivation #shorts #inspiration #india"
+    description = f"Motivational Quote: {quote}\n#motivation #shorts #inspiration #life"
     tags = ["motivation", "shorts", "inspiration", "success", "life"]
-    request_body = {
+    body = {
         "snippet": {"title": title, "description": description, "tags": tags, "categoryId": "22"},
         "status": {"privacyStatus": "public"}
     }
-    media = MediaFileUpload(video_file, chunksize=-1, resumable=True, mimetype="video/*")
-    request = youtube.videos().insert(part="snippet,status", body=request_body, media_body=media)
-    response = request.execute()
-    print(f"✅ Uploaded: https://youtu.be/{response['id']}")
 
-# ------------------ MAIN AUTOMATION ------------------
-def main():
-    # Check existing videos first
-    ready_videos = [f for f in os.listdir(VIDEOS_DIR) if f.endswith(".mp4")]
-    if ready_videos:
-        video_file = os.path.join(VIDEOS_DIR, random.choice(ready_videos))
-        print(f"📤 Uploading existing video: {video_file}")
-        upload_youtube(video_file, "Ready-made video")
-        os.remove(video_file)
-        return
+    media = MediaFileUpload(video_path, chunksize=-1, resumable=True, mimetype="video/*")
+    req = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
+    res = req.execute()
+    print(f"✅ Uploaded: https://youtu.be/{res['id']}")
 
-    # Generate new video
+# Main automation
+def run():
     quote = random.choice(QUOTES)
-    print(f"🎬 Generating new video with quote: {quote}")
-    output_path = os.path.join(VIDEOS_DIR, "quote_video.mp4")
-    create_quote_video(quote, output_path)
-    upload_youtube(output_path, quote)
-    os.remove(output_path)
+    print(f"🎬 Creating video for quote: {quote}")
+    img_path = generate_image(quote)
+    audio_path = get_youtube_music()
+    video_path = create_video(img_path, audio_path)
+    upload_youtube(video_path, quote)
+    os.remove(video_path)
+    print("🎉 Done, temporary video deleted")
 
 if __name__ == "__main__":
-    main()
-        
+    run()
+    
