@@ -3,7 +3,11 @@ name: Auto YouTube Shorts Upload
 on:
   schedule:
     - cron: '0 */6 * * *'  # Every 6 hours
-  workflow_dispatch:       # Manual trigger option
+  workflow_dispatch:       # Manual trigger
+
+env:
+  TOKEN_JSON: ${{ secrets.TOKEN_JSON }}
+  CLIENT_SECRET_JSON: ${{ secrets.CLIENT_SECRET_JSON }}
 
 jobs:
   upload_shorts:
@@ -18,20 +22,17 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install dependencies
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg imagemagick
+
+      - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          # PyTorch CPU install (GPU optional if available)
           pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-          # AI + video + image libraries
           pip install diffusers transformers moviepy pillow numpy google-api-python-client google-auth google-auth-oauthlib
 
       - name: Run automation
         run: python main.py
-
-      - name: Upload generated video folder as artifact (optional)
-        uses: actions/upload-artifact@v4
-        with:
-          name: videos
-          path: videos/
-          
+        
