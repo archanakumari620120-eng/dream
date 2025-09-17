@@ -164,7 +164,7 @@ def run_automation():
     print(f"\n🎬 Creating video with quote: {quote}")
 
     img = generate_image(0, quote)
-    audio = get_music()
+    music = pick_music()
     video = create_video(0, img, audio, quote)
 
     if video:
