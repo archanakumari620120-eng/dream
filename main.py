@@ -40,34 +40,11 @@ def generate_ai_image(quote, output_path):
     except Exception as e:
         print("⚠️ AI Image generation failed, using fallback black screen:", e)
         img = Image.new("RGB", (WIDTH, HEIGHT), color=(0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        font = ImageFont.load_default()
+        draw.text((50, HEIGHT//2), quote[:80], fill="white", font=font)
         img.save(output_path)
         return output_path
-
-# ------------------ CREATE TEXT CLIP ------------------
-def create_text_clip(text, size=(WIDTH, HEIGHT), fontsize=70, color="white", bg_color="black"):
-    img = Image.new("RGB", size, color=bg_color)
-    draw = ImageDraw.Draw(img)
-    try:
-        font = ImageFont.truetype("DejaVuSans-Bold.ttf", fontsize)
-    except:
-        font = ImageFont.load_default()
-    lines, line = [], ""
-    for word in text.split():
-        if draw.textlength(line + " " + word, font=font) <= size[0] - 100:
-            line += " " + word
-        else:
-            lines.append(line.strip())
-            line = word
-    lines.append(line.strip())
-    total_h = sum([draw.textbbox((0,0), l, font=font)[3] for l in lines])
-    y = (size[1] - total_h) // 2
-    for l in lines:
-        w = draw.textlength(l, font=font)
-        x = (size[0] - w) // 2
-        draw.text((x, y), l, font=font, fill=color)
-        y += fontsize + 10
-    frame = np.array(img)
-    return ImageClip(frame).set_duration(VIDEO_DURATION)
 
 # ------------------ PICK MUSIC ------------------
 def get_music():
@@ -124,3 +101,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+        
