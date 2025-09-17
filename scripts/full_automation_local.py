@@ -112,11 +112,11 @@ def generate_image(i, quote):
         return path
 
 # 🎵 Music selection
-def get_music():
-    files = [f for f in os.listdir(MUSIC_DIR) if f.endswith(".mp3")]
-    if files:
-        return os.path.join(MUSIC_DIR, random.choice(files))
-    return None
+def pick_music():
+    if not MUSIC_DIR.exists():
+        return None
+    mus = [p for p in MUSIC_DIR.iterdir() if p.suffix.lower() in ('.mp3','.wav','.m4a')]
+    return str(random.choice(mus)) if mus else None
 
 # 🎬 Video creation
 def create_video(i, img, audio, quote):
