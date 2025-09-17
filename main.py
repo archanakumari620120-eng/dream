@@ -1,99 +1,153 @@
 import os
 import random
-import tempfile
-import json
+import yt_dlp
 from moviepy.editor import ImageClip, AudioFileClip
 from diffusers import StableDiffusionPipeline
 import torch
 from PIL import Image, ImageDraw
+from datetime import datetime
+import google.auth.transport.requests
+from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
 from google.oauth2.credentials import Credentials
 
-# Config
-VIDEO_DURATION = 10
-QUOTES_FILE = "quotes.txt"
-
-# Directories
+# 📂 Directories
 IMAGES_DIR = "images"
+MUSIC_DIR = "music"
+VIDEOS_DIR = "videos"
 os.makedirs(IMAGES_DIR, exist_ok=True)
+os.makedirs(MUSIC_DIR, exist_ok=True)
+os.makedirs(VIDEOS_DIR, exist_ok=True)
 
-# Stable Diffusion
+# 🎯 Config
+video_duration = 10
+topic = "Motivational Quotes"
+SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
+
+# 🤖 AI pipeline
 device = "cuda" if torch.cuda.is_available() else "cpu"
 pipe = StableDiffusionPipeline.from_pretrained(
-    "runwayml/stable-diffusion-v1-5", torch_dtype=torch.float32
+    "runwayml/stable-diffusion-v1-5",
+    torch_dtype=torch.float32
 ).to(device)
 
-# Load quotes
-with open(QUOTES_FILE, "r", encoding="utf-8") as f:
-    QUOTES = [line.strip() for line in f if line.strip()]
-
-# Get copyright-free music
-def get_youtube_music():
-    silent_path = "music/silence.mp3"
-    return silent_path if os.path.exists(silent_path) else None
-
-# Generate AI image with fallback
-def generate_image(quote):
+# 🖼️ Image generation
+def generate_image(i):
     try:
-        prompt = f"Ultra realistic cinematic illustration, Indian style, motivational theme: {quote}"
+        prompt = f"Viral YouTube Short image about {topic}"
         result = pipe(prompt, height=512, width=512, num_inference_steps=20)
-        img_path = os.path.join(IMAGES_DIR, "image_tmp.png")
-        result.images[0].save(img_path)
-        return img_path
-    except Exception:
-        img = Image.new("RGB", (512, 512), (0, 0, 0))
-        draw = ImageDraw.Draw(img)
-        draw.text((20, 250), quote[:40], fill=(255, 255, 255))
-        fallback_path = os.path.join(IMAGES_DIR, "image_tmp.png")
-        img.save(fallback_path)
-        return fallback_path
+        if result and hasattr(result, "images") and len(result.images) > 0:
+            image = result.images[0]
+        else:
+            raise ValueError("No image from diffusion pipeline")
+        path = os.path.join(IMAGES_DIR, f"image_{i}.png")
+        image.save(path)
+        return path
+    except Exception as e:
+        print(f"⚠️ Image generation failed: {e}")
+        fallback = Image.new("RGB", (512, 512), color=(0, 0, 0))
+        d = ImageDraw.Draw(fallback)
+        d.text((50, 250), f"Video {i} - {topic}", fill=(255, 255, 255))
+        path = os.path.join(IMAGES_DIR, f"image_fallback_{i}.png")
+        fallback.save(path)
+        return path
 
-# Create temporary video
-def create_video(image_path, audio_path):
-    clip = ImageClip(image_path, duration=VIDEO_DURATION)
-    if audio_path and os.path.exists(audio_path):
-        clip = clip.set_audio(AudioFileClip(audio_path))
-    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
-    clip.write_videofile(tmp_file.name, fps=24, codec="libx264", audio_codec="aac")
-    clip.close()
-    return tmp_file.name
-
-# Upload video to YouTube using secrets
-def upload_youtube(video_path, quote):
-    token_json_str = os.environ.get("TOKEN_JSON")
-    client_secret_str = os.environ.get("CLIENT_SECRET_JSON")
-    if not token_json_str or not client_secret_str:
-        raise ValueError("TOKEN_JSON or CLIENT_SECRET_JSON not set in secrets")
-    
-    creds_dict = json.loads(token_json_str)
-    creds = Credentials.from_authorized_user_info(creds_dict, ["https://www.googleapis.com/auth/youtube.upload"])
-    
-    youtube = build("youtube", "v3", credentials=creds)
-
-    title = f"{quote[:60]} | Motivational Shorts"
-    description = f"Motivational Quote: {quote}\n#motivation #shorts #inspiration #life"
-    tags = ["motivation", "shorts", "inspiration", "success", "life"]
-    body = {
-        "snippet": {"title": title, "description": description, "tags": tags, "categoryId": "22"},
-        "status": {"privacyStatus": "public"}
+# 🎵 Music
+def download_music():
+    url = "https://www.youtube.com/watch?v=2OEL4P1Rz04"
+    ydl_opts = {
+        "format": "bestaudio/best",
+        "outtmpl": os.path.join(MUSIC_DIR, "music.%(ext)s"),
+        "quiet": True,
+        "postprocessors": [{
+            "key": "FFmpegExtractAudio",
+            "preferredcodec": "mp3",
+            "preferredquality": "192",
+        }],
     }
+    try:
+        yt_dlp.YoutubeDL(ydl_opts).download([url])
+        print("✅ Downloaded copyright free music")
+    except Exception as e:
+        print(f"⚠️ Music download failed: {e}")
 
-    media = MediaFileUpload(video_path, chunksize=-1, resumable=True, mimetype="video/*")
-    req = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
-    res = req.execute()
-    print(f"✅ Uploaded: https://youtu.be/{res['id']}")
+def get_music():
+    files = [f for f in os.listdir(MUSIC_DIR) if f.endswith(".mp3")]
+    if not files:
+        download_music()
+        files = [f for f in os.listdir(MUSIC_DIR) if f.endswith(".mp3")]
+    if files:
+        return os.path.join(MUSIC_DIR, random.choice(files))
+    return None
 
-# Main automation
-def run():
-    quote = random.choice(QUOTES)
-    print(f"🎬 Creating video for quote: {quote}")
-    img_path = generate_image(quote)
-    audio_path = get_youtube_music()
-    video_path = create_video(img_path, audio_path)
-    upload_youtube(video_path, quote)
-    os.remove(video_path)
-    print("🎉 Done, temporary video deleted")
+# 🎬 Video creation
+def create_video(i, img, audio):
+    try:
+        path = os.path.join(VIDEOS_DIR, f"video_{i}.mp4")
+        clip = ImageClip(img, duration=video_duration)
+        if audio and os.path.exists(audio):
+            audio_clip = AudioFileClip(audio).volumex(0.6)
+            clip = clip.set_audio(audio_clip)
+        clip.write_videofile(path, fps=24, codec="libx264", audio_codec="aac")
+        return path
+    except Exception as e:
+        print(f"❌ Video creation failed: {e}")
+        return None
+
+# 📤 YouTube Upload
+def get_youtube_service():
+    creds = None
+    if os.path.exists("token.json"):
+        creds = Credentials.from_authorized_user_file("token.json", SCOPES)
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(google.auth.transport.requests.Request())
+        else:
+            flow = InstalledAppFlow.from_client_secrets_file("client_secret.json", SCOPES)
+            creds = flow.run_local_server(port=8081)
+        with open("token.json", "w") as token:
+            token.write(creds.to_json())
+    return build("youtube", "v3", credentials=creds)
+
+def upload_to_youtube(video_path, i):
+    try:
+        youtube = get_youtube_service()
+        title = f"{topic} #{i}"
+        description = f"Auto-generated YouTube Shorts about {topic}.\nUploaded via automation."
+        request = youtube.videos().insert(
+            part="snippet,status",
+            body={
+                "snippet": {
+                    "title": title,
+                    "description": description,
+                    "tags": ["Motivation", "Shorts", "AI Generated"],
+                    "categoryId": "22",
+                },
+                "status": {
+                    "privacyStatus": "public",
+                    "selfDeclaredMadeForKids": False,
+                },
+            },
+            media_body=video_path
+        )
+        response = request.execute()
+        print(f"✅ Uploaded to YouTube: https://youtu.be/{response['id']}")
+    except Exception as e:
+        print(f"❌ Upload failed: {e}")
+
+# 🚀 Main automation
+def run_automation(total_videos=1):
+    for i in range(total_videos):
+        print(f"\n🎬 Starting video {i}")
+        img = generate_image(i)
+        audio = get_music()
+        video = create_video(i, img, audio)
+        if video:
+            print(f"✅ Video {i} created at {video}")
+            upload_to_youtube(video, i)
+        else:
+            print(f"❌ Video {i} failed")
+    print("\n🎉 Automation completed!")
 
 if __name__ == "__main__":
-    run()
+    run_automation(total_videos=1)
