@@ -1,6 +1,8 @@
-name: YouTube Shorts AI CPU-GPU Safe
+name: YouTube Shorts AI
 
 on:
+  schedule:
+    - cron: "0 */6 * * *"   # every 6 hours
   workflow_dispatch:
 
 jobs:
@@ -22,5 +24,5 @@ jobs:
         echo "$CLIENT_SECRET_JSON" > client_secret.json
         echo "$TOKEN_JSON" > token.json
     - name: Run AI Automation
-      run: python scripts/full_automation_local.py
+      run: python main.py
       
