@@ -3,7 +3,7 @@ name: Auto YouTube Shorts Upload
 on:
   schedule:
     - cron: '0 */6 * * *'  # Every 6 hours
-  workflow_dispatch:       # Manual trigger
+  workflow_dispatch:
 
 env:
   TOKEN_JSON: ${{ secrets.TOKEN_JSON }}
@@ -30,8 +30,9 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-          pip install diffusers transformers moviepy pillow numpy google-api-python-client google-auth google-auth-oauthlib
+          pip install --prefer-binary moviepy
+          pip install pillow numpy torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+          pip install diffusers transformers google-api-python-client google-auth google-auth-oauthlib
 
       - name: Run automation
         run: python main.py
