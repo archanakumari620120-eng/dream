@@ -34,7 +34,7 @@ jobs:
           HF_API_TOKEN: ${{ secrets.HF_API_TOKEN }}
 
       # 5️⃣ Run main.py with secrets
-      - name: Run pipeline
+      - name: Run AI Shorts pipeline
         run: python main.py
         env:
           HF_API_TOKEN: ${{ secrets.HF_API_TOKEN }}
