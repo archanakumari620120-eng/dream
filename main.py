@@ -20,37 +20,37 @@ os.makedirs(MUSIC_DIR, exist_ok=True)
 
 # ---------------- HUGGING FACE IMAGE GENERATION ----------------
 def generate_image_huggingface(prompt, model_id="stabilityai/stable-diffusion-xl-base-1.0"):
-    api_token = os.getenv("HF_API_TOKEN")
-    if not api_token:
-        raise ValueError("❌ Hugging Face API Token नहीं मिला! कृपया 'HF_API_TOKEN' नाम का Secret सेट करें।")
+    try:
+        print("🔹 Starting image generation...")
+        api_token = os.getenv("HF_API_TOKEN")
+        if not api_token:
+            raise ValueError("❌ Hugging Face API Token not found! Set 'HF_API_TOKEN' as a secret.")
 
-    api_url = f"https://api-inference.huggingface.co/models/{model_id}"
-    headers = {"Authorization": f"Bearer {api_token}"}
+        api_url = f"https://api-inference.huggingface.co/models/{model_id}"
+        headers = {"Authorization": f"Bearer {api_token}"}
+        payload = {"inputs": f"High-quality, vertical (1080x1920) YouTube Short background image for quote: '{prompt}'"}
 
-    payload = {
-        "inputs": f"High-quality, vertical (1080x1920) YouTube Short background image for quote: '{prompt}'",
-    }
-
-    print(f"🔹 Sending request to Hugging Face model '{model_id}'...")
-    response = requests.post(api_url, headers=headers, json=payload)
-
-    if response.status_code == 503:
-        print("⏳ Model loading, waiting 30 seconds...")
-        sleep(30)
         response = requests.post(api_url, headers=headers, json=payload)
+        if response.status_code == 503:
+            print("⏳ Model loading, waiting 30 seconds...")
+            sleep(30)
+            response = requests.post(api_url, headers=headers, json=payload)
 
-    if response.status_code != 200:
-        error_message = f"❌ Hugging Face API error. Status: {response.status_code}, Response: {response.text}"
-        print(error_message)
-        raise Exception(error_message)
+        if response.status_code != 200:
+            raise Exception(f"Hugging Face API error. Status: {response.status_code}, Response: {response.text}")
 
-    image_bytes = response.content
-    img_path = os.path.join(VIDEOS_DIR, "frame.png")
-    with open(img_path, "wb") as f:
-        f.write(image_bytes)
+        image_bytes = response.content
+        img_path = os.path.join(VIDEOS_DIR, "frame.png")
+        with open(img_path, "wb") as f:
+            f.write(image_bytes)
 
-    print(f"✅ Image saved at {img_path}")
-    return img_path
+        print(f"✅ Image generated successfully at {img_path}")
+        return img_path
+
+    except Exception as e:
+        print("❌ Error in IMAGE GENERATION step:")
+        traceback.print_exc()
+        raise
 
 # ---------------- MUSIC SELECTION ----------------
 def get_random_music():
@@ -63,13 +63,14 @@ def get_random_music():
         print(f"🎵 Selected music: {chosen}")
         return chosen
     except Exception as e:
-        print(f"❌ Error selecting music: {e}")
+        print("❌ Error in MUSIC SELECTION step:")
+        traceback.print_exc()
         raise
 
 # ---------------- VIDEO CREATION ----------------
 def create_video(image_path, audio_path, output_path="final_video.mp4"):
     try:
-        print("🔹 Creating video...")
+        print("🔹 Starting video creation...")
         clip_duration = 10
         clip = ImageClip(image_path).set_duration(clip_duration)
 
@@ -80,17 +81,18 @@ def create_video(image_path, audio_path, output_path="final_video.mp4"):
             clip = clip.set_audio(audio_clip.subclip(0, clip_duration))
 
         clip.write_videofile(output_path, fps=24, codec="libx264", audio_codec="aac")
-        print(f"✅ Video created at {output_path}")
+        print(f"✅ Video created successfully at {output_path}")
         return output_path
+
     except Exception as e:
-        print(f"❌ Error creating video: {e}")
+        print("❌ Error in VIDEO CREATION step:")
         traceback.print_exc()
         raise
 
 # ---------------- YOUTUBE UPLOAD ----------------
 def upload_to_youtube(video_path, title="AI Short Video", description="Auto-generated Short using AI"):
     try:
-        print("🔹 Preparing YouTube upload...")
+        print("🔹 Starting YouTube upload...")
         creds = Credentials.from_authorized_user_file("token.json", ["https://www.googleapis.com/auth/youtube.upload"])
         youtube = build("youtube", "v3", credentials=creds)
 
@@ -109,10 +111,11 @@ def upload_to_youtube(video_path, title="AI Short Video", description="Auto-gene
         )
 
         response = request.execute()
-        print(f"✅ Video uploaded. Video ID: {response.get('id')}")
+        print(f"✅ Video uploaded successfully. Video ID: {response.get('id')}")
         return response.get("id")
+
     except Exception as e:
-        print(f"❌ Error uploading video: {e}")
+        print("❌ Error in YOUTUBE UPLOAD step:")
         traceback.print_exc()
         raise
 
@@ -128,6 +131,8 @@ if __name__ == "__main__":
         upload_to_youtube(video_path, title=f"{quote} #shorts", description="AI Generated Motivational Short")
 
         print("🎉 Pipeline completed successfully!")
+
     except Exception as e:
-        print(f"❌ Main pipeline error: {e}")
-    
+        print("❌ Main pipeline failed:")
+        traceback.print_exc()
+        
