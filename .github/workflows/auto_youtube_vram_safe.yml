@@ -26,13 +26,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # 4️⃣ Hugging Face + YouTube secrets save karo
+      # 4️⃣ Secrets ko environment variable me set karo
       - name: Setup secrets
         run: |
-          echo "${{ secrets.HF_API_TOKEN }}" > hf_token.txt
           echo "${{ secrets.TOKEN_JSON }}" > token.json
+        env:
+          HF_API_TOKEN: ${{ secrets.HF_API_TOKEN }}
 
-      # 5️⃣ Run main.py
+      # 5️⃣ Run main.py with secrets
       - name: Run pipeline
         run: python main.py
-        
+        env:
+          HF_API_TOKEN: ${{ secrets.HF_API_TOKEN }}
+          
