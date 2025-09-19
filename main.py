@@ -2,72 +2,63 @@ import os
 import base64
 import random
 import traceback
-from tempfile import NamedTemporaryFile
-
-# Vertex AI
-from google.cloud import aiplatform
+import requests
+from time import sleep
 
 # Video processing
-from moviepy.editor import ImageClip, AudioFileClip
+from moviepy.editor import ImageClip, AudioFileClip, vfx
 
 # YouTube API
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 
-# ---------------- DIRECTORIES ----------------
+# ---------------- CONFIG & DIRECTORIES ----------------
 VIDEOS_DIR = "videos"
 MUSIC_DIR = "music"
 os.makedirs(VIDEOS_DIR, exist_ok=True)
+os.makedirs(MUSIC_DIR, exist_ok=True)
 
-# ---------------- HELPER: Setup Vertex AI Credentials from secret ----------------
-def setup_vertex_credentials():
-    try:
-        json_secret = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")  # secret content
-        if json_secret:
-            with NamedTemporaryFile(delete=False, suffix=".json") as f:
-                f.write(json_secret.encode())
-                os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = f.name
-            print("✅ Vertex AI credentials set from secret.")
-        else:
-            print("⚠️ GOOGLE_APPLICATION_CREDENTIALS_JSON not found. Using system path.")
-    except Exception as e:
-        print(f"❌ Error setting up Vertex credentials: {e}")
-        traceback.print_exc()
-        raise
+# ---------------- HUGGING FACE IMAGE GENERATION ----------------
+def generate_image_huggingface(prompt, model_id="stabilityai/stable-diffusion-xl-base-1.0"):
+    api_token = os.getenv("HF_API_TOKEN")
+    if not api_token:
+        raise ValueError("❌ Hugging Face API Token नहीं मिला! कृपया 'HF_API_TOKEN' नाम का Secret सेट करें।")
 
-# ---------------- VERTEX AI IMAGE GENERATION ----------------
-def generate_image_vertex(prompt, project_id, location="us-central1", model_id="image-bison-001"):
-    try:
-        print("🔹 Initializing Vertex AI client...")
-        client = aiplatform.gapic.PredictionServiceClient()
+    api_url = f"https://api-inference.huggingface.co/models/{model_id}"
+    headers = {"Authorization": f"Bearer {api_token}"}
 
-        endpoint = f"projects/{project_id}/locations/{location}/publishers/google/models/{model_id}"
-        instance = {"prompt": f"High-quality, vertical (1080x1920) YouTube Short background image for quote: '{prompt}'"}
+    payload = {
+        "inputs": f"High-quality, vertical (1080x1920) YouTube Short background image for quote: '{prompt}'",
+    }
 
-        print("🔹 Sending request to Vertex AI model...")
-        response = client.predict(endpoint=endpoint, instances=[instance])
-        
-        image_b64 = response.predictions[0]['image_base64']
-        image_data = base64.b64decode(image_b64)
+    print(f"🔹 Sending request to Hugging Face model '{model_id}'...")
+    response = requests.post(api_url, headers=headers, json=payload)
 
-        img_path = os.path.join(VIDEOS_DIR, "frame.png")
-        with open(img_path, "wb") as f:
-            f.write(image_data)
+    if response.status_code == 503:
+        print("⏳ Model loading, waiting 30 seconds...")
+        sleep(30)
+        response = requests.post(api_url, headers=headers, json=payload)
 
-        print(f"✅ Image generated successfully at {img_path}")
-        return img_path
+    if response.status_code != 200:
+        error_message = f"❌ Hugging Face API error. Status: {response.status_code}, Response: {response.text}"
+        print(error_message)
+        raise Exception(error_message)
 
-    except Exception as e:
-        print(f"❌ Error generating image via Vertex AI: {e}")
-        traceback.print_exc()
-        raise
+    image_bytes = response.content
+    img_path = os.path.join(VIDEOS_DIR, "frame.png")
+    with open(img_path, "wb") as f:
+        f.write(image_bytes)
+
+    print(f"✅ Image saved at {img_path}")
+    return img_path
 
 # ---------------- MUSIC SELECTION ----------------
 def get_random_music():
     try:
         files = [f for f in os.listdir(MUSIC_DIR) if f.endswith((".mp3", ".wav"))]
         if not files:
-            raise Exception("No music files found in music folder.")
+            print("⚠️ No music found. Video will be silent.")
+            return None
         chosen = os.path.join(MUSIC_DIR, random.choice(files))
         print(f"🎵 Selected music: {chosen}")
         return chosen
@@ -79,12 +70,17 @@ def get_random_music():
 def create_video(image_path, audio_path, output_path="final_video.mp4"):
     try:
         print("🔹 Creating video...")
-        clip = ImageClip(image_path).set_duration(10)
+        clip_duration = 10
+        clip = ImageClip(image_path).set_duration(clip_duration)
+
         if audio_path and os.path.exists(audio_path):
             audio_clip = AudioFileClip(audio_path)
-            clip = clip.set_audio(audio_clip).set_duration(audio_clip.duration)
-        clip.write_videofile(output_path, fps=24)
-        print(f"✅ Video created successfully at {output_path}")
+            if audio_clip.duration < clip_duration:
+                audio_clip = audio_clip.fx(vfx.loop, duration=clip_duration)
+            clip = clip.set_audio(audio_clip.subclip(0, clip_duration))
+
+        clip.write_videofile(output_path, fps=24, codec="libx264", audio_codec="aac")
+        print(f"✅ Video created at {output_path}")
         return output_path
     except Exception as e:
         print(f"❌ Error creating video: {e}")
@@ -104,7 +100,7 @@ def upload_to_youtube(video_path, title="AI Short Video", description="Auto-gene
                 "snippet": {
                     "title": title,
                     "description": description,
-                    "tags": ["AI", "Shorts"],
+                    "tags": ["AI", "Shorts", "Quotes", "Motivation"],
                     "categoryId": "22"
                 },
                 "status": {"privacyStatus": "private"}
@@ -113,7 +109,7 @@ def upload_to_youtube(video_path, title="AI Short Video", description="Auto-gene
         )
 
         response = request.execute()
-        print(f"✅ Video uploaded successfully. Video ID: {response.get('id')}")
+        print(f"✅ Video uploaded. Video ID: {response.get('id')}")
         return response.get("id")
     except Exception as e:
         print(f"❌ Error uploading video: {e}")
@@ -123,30 +119,15 @@ def upload_to_youtube(video_path, title="AI Short Video", description="Auto-gene
 # ---------------- MAIN PIPELINE ----------------
 if __name__ == "__main__":
     try:
-        setup_vertex_credentials()
-
         quote = "Life is what happens when you're busy making other plans."
-
-        PROJECT_ID = os.getenv("GCP_PROJECT_ID")
-        LOCATION = "us-central1"
-        MODEL_ID = "image-bison-001"
-
         print(f"📝 Quote: {quote}")
 
-        # 1️⃣ Generate image
-        img_path = generate_image_vertex(quote, PROJECT_ID, LOCATION, MODEL_ID)
-
-        # 2️⃣ Select music
+        img_path = generate_image_huggingface(quote)
         music_path = get_random_music()
-
-        # 3️⃣ Create video
         video_path = create_video(img_path, music_path)
-
-        # 4️⃣ Upload to YouTube
-        upload_to_youtube(video_path, title=quote, description="Auto-generated Short using AI")
+        upload_to_youtube(video_path, title=f"{quote} #shorts", description="AI Generated Motivational Short")
 
         print("🎉 Pipeline completed successfully!")
-
     except Exception as e:
-        print("❌ Pipeline failed:", e)
-        
+        print(f"❌ Main pipeline error: {e}")
+    
