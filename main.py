@@ -1,11 +1,12 @@
 import os
 import random
 import json
-import requests
+import base64
 from datetime import datetime
 from moviepy.editor import ImageClip, AudioFileClip
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
+import google.generativeai as genai
 
 # ========= CONFIG =========
 VIDEOS_DIR = "videos"
@@ -14,35 +15,39 @@ DURATION = 30              # video length (seconds)
 WIDTH, HEIGHT = 1080, 1920 # Shorts format
 # ==========================
 
-# Create folders
 os.makedirs(VIDEOS_DIR, exist_ok=True)
 
 # 🔑 Load env variables (Secrets)
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-# YouTube OAuth secrets are handled by GitHub Secrets (TOKEN_JSON + CLIENT_SECRET_JSON)
-
 # ✅ Generate Image from Gemini
 def generate_image(prompt):
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateImage"
-    headers = {"Content-Type": "application/json"}
-    params = {"key": GEMINI_API_KEY}
-    payload = {
-        "prompt": {
-            "text": prompt
-        }
-    }
-    r = requests.post(url, headers=headers, params=params, json=payload)
-    if r.status_code != 200:
-        raise Exception(f"Gemini API Error: {r.text}")
-    data = r.json()
-    image_b64 = data["candidates"][0]["image"]["base64"]
-    img_path = os.path.join(VIDEOS_DIR, "frame.png")
-    with open(img_path, "wb") as f:
-        f.write(requests.utils.unquote_to_bytes(image_b64))
-    return img_path
+    try:
+        genai.configure(api_key=GEMINI_API_KEY)
+        model = genai.GenerativeModel('imagen-3-flash')
 
-# ✅ Create Video from Image
+        # API Call
+        response = model.generate_content(
+            prompt,
+            generation_config={"sample_count": 1}
+        )
+
+        # Base64 निकालना
+        image_b64 = response.candidates[0].content.parts[0].inline_data.data
+
+        # Save image
+        img_path = os.path.join(VIDEOS_DIR, "frame.png")
+        with open(img_path, "wb") as f:
+            f.write(base64.b64decode(image_b64))
+
+        print("✅ Image generated successfully.")
+        return img_path
+
+    except Exception as e:
+        print(f"❌ Error generating image: {e}")
+        raise
+
+# ✅ Create Video
 def create_video(image_path, output_path):
     img_clip = ImageClip(image_path).set_duration(DURATION).resize((WIDTH, HEIGHT))
     if os.path.exists(MUSIC_FILE):
@@ -83,20 +88,20 @@ def upload_to_youtube(video_path, title, description, tags):
 
 # ✅ Main Flow
 def main():
-    # 1. Get random prompt
+    # 1. Prompt / Quote चुनो
     with open("quotes.txt", "r", encoding="utf-8") as f:
         prompts = [line.strip() for line in f if line.strip()]
     prompt = random.choice(prompts)
 
-    # 2. Generate image
+    # 2. Gemini से Image Generate
     img_path = generate_image(prompt)
 
-    # 3. Create video
+    # 3. Video बनाओ
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     video_path = os.path.join(VIDEOS_DIR, f"video_{timestamp}.mp4")
     create_video(img_path, video_path)
 
-    # 4. Upload video
+    # 4. Upload to YouTube
     title = f"{prompt} #shorts"
     description = f"AI Generated Shorts - {prompt}"
     tags = ["AI", "shorts", "motivation", "quotes"]
