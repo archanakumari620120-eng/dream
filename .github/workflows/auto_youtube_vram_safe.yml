@@ -2,12 +2,13 @@ name: AI Shorts Automation
 
 on:
   schedule:
-    - cron: "0 */5 * * *"   # Har 5 ghante run
+    - cron: "0 */5 * * *"
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -26,13 +27,14 @@ jobs:
         run: |
           echo "${{ secrets.TOKEN_JSON }}" > token.json
         env:
-          HF_API_TOKEN: ${{ secrets.HF_API_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          HF_API_TOKEN: ${{ secrets.HF_API_TOKEN }}
+          TOKEN_JSON: ${{ secrets.TOKEN_JSON }}
 
       - name: Run pipeline
         run: python main.py
         env:
-          HF_API_TOKEN: ${{ secrets.HF_API_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          HF_API_TOKEN: ${{ secrets.HF_API_TOKEN }}
           TOKEN_JSON: ${{ secrets.TOKEN_JSON }}
           
