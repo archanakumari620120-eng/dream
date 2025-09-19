@@ -23,12 +23,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Setup secrets
-        run: |
-          echo "${{ secrets.TOKEN_JSON }}" > token.json
+      - name: Write secrets to files
         env:
+          TOKEN_JSON: ${{ secrets.TOKEN_JSON }}
           HF_API_TOKEN: ${{ secrets.HF_API_TOKEN }}
-
+          CLIENT_SECRET_JSON: ${{ secrets.CLIENT_SECRET_JSON }}
+        run: |
+          echo "$TOKEN_JSON" > token.json
+          echo "$CLIENT_SECRET_JSON" > client_secret.json
       - name: Run pipeline
         run: python main.py
         env:
