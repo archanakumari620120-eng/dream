@@ -10,10 +10,12 @@ google-auth>=2.23.0
 google-auth-oauthlib>=1.0.0
 
 # Hugging Face API
-requests>=2.31.0
 google-auth-httplib2
 requests>=2.32.3
 yt_dlp
+google-generativeai==0.1.0
+moviepy==2.0.0
+google-api-python-client==2.98.0
 
 
 
