@@ -3,6 +3,7 @@ import base64
 import random
 import traceback
 import requests
+import json
 from time import sleep
 
 # Video processing
@@ -18,6 +19,20 @@ MUSIC_DIR = "music"
 os.makedirs(VIDEOS_DIR, exist_ok=True)
 os.makedirs(MUSIC_DIR, exist_ok=True)
 
+# ---------------- TOKEN.JSON FIX ----------------
+token_env = os.getenv("TOKEN_JSON")
+if token_env:
+    try:
+        # Agar escape hua to fix kar lo
+        data = json.loads(token_env.replace('\\"', '"'))
+        with open("token.json", "w") as f:
+            json.dump(data, f)
+        print("✅ token.json successfully created from secret")
+    except Exception as e:
+        raise ValueError(f"❌ TOKEN_JSON invalid: {e}")
+else:
+    raise ValueError("❌ TOKEN_JSON missing! Add it in GitHub Secrets.")
+
 # ---------------- DEBUG SECRET CHECK ----------------
 hf_token = os.getenv("HF_API_TOKEN")
 if not hf_token:
@@ -27,19 +42,13 @@ else:
 
 # ---------------- HUGGING FACE IMAGE GENERATION ----------------
 def generate_image_huggingface(prompt, model_id="stabilityai/stable-diffusion-xl-base-1.0"):
-    """
-    Hugging Face Inference API का उपयोग करके इमेज जेनरेट करता है।
-    """
     api_token = os.getenv("HF_API_TOKEN")
     if not api_token:
         raise ValueError("❌ HF_API_TOKEN secret missing!")
 
     api_url = f"https://api-inference.huggingface.co/models/{model_id}"
     headers = {"Authorization": f"Bearer {api_token}"}
-
-    payload = {
-        "inputs": prompt,
-    }
+    payload = {"inputs": prompt}
 
     print(f"🔹 Hugging Face API को रिक्वेस्ट भेज रहा है...")
     response = requests.post(api_url, headers=headers, json=payload)
@@ -50,9 +59,7 @@ def generate_image_huggingface(prompt, model_id="stabilityai/stable-diffusion-xl
         response = requests.post(api_url, headers=headers, json=payload)
 
     if response.status_code != 200:
-        error_message = f"❌ Hugging Face API Error: {response.status_code}, {response.text}"
-        print(error_message)
-        raise Exception(error_message)
+        raise Exception(f"❌ Hugging Face API Error: {response.status_code}, {response.text}")
 
     image_bytes = response.content
     img_path = os.path.join(VIDEOS_DIR, "frame.png")
@@ -133,16 +140,9 @@ if __name__ == "__main__":
         prompt = "Vertical 1080x1920 YouTube Short background of a dog, ultra-realistic cinematic, trending on YouTube Shorts"
         print(f"📝 Prompt: {prompt}")
 
-        # 1️⃣ Generate image
         img_path = generate_image_huggingface(prompt)
-
-        # 2️⃣ Pick music
         music_path = get_random_music()
-
-        # 3️⃣ Create video
         video_path = create_video(img_path, music_path)
-
-        # 4️⃣ Upload to YouTube
         upload_to_youtube(video_path, title=f"{prompt} #shorts", description="AI Generated Viral Short")
 
         print("🎉 Pipeline complete!")
@@ -150,4 +150,4 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"❌ Pipeline failed: {e}")
         traceback.print_exc()
-    
+        
