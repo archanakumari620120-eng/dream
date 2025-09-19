@@ -3,7 +3,6 @@ import base64
 import random
 import traceback
 import requests
-import json
 from time import sleep
 
 # Video processing
@@ -19,26 +18,20 @@ MUSIC_DIR = "music"
 os.makedirs(VIDEOS_DIR, exist_ok=True)
 os.makedirs(MUSIC_DIR, exist_ok=True)
 
-# ---------------- TOKEN.JSON FIX ----------------
-token_env = os.getenv("TOKEN_JSON")
-if token_env:
-    try:
-        # Agar escape hua to fix kar lo
-        data = json.loads(token_env.replace('\\"', '"'))
-        with open("token.json", "w") as f:
-            json.dump(data, f)
-        print("✅ token.json successfully created from secret")
-    except Exception as e:
-        raise ValueError(f"❌ TOKEN_JSON invalid: {e}")
-else:
-    raise ValueError("❌ TOKEN_JSON missing! Add it in GitHub Secrets.")
-
 # ---------------- DEBUG SECRET CHECK ----------------
 hf_token = os.getenv("HF_API_TOKEN")
 if not hf_token:
     raise ValueError("❌ HF_API_TOKEN missing! Check GitHub Secrets.")
 else:
     print("✅ HF_API_TOKEN successfully loaded (length:", len(hf_token), ")")
+
+# ---------------- VIRAL PROMPTS ----------------
+VIRAL_CONCEPTS = [
+    "cat", "dog", "human", "woman", "man", "animal", "bird", "nature", "cityscape",
+    "futuristic robot", "cute baby", "sports action", "food", "technology", "cinematic scene"
+]
+
+HASHTAGS = ["#AI", "#Shorts", "#Viral", "#Trending", "#Motivation", "#Cute", "#Inspiration"]
 
 # ---------------- HUGGING FACE IMAGE GENERATION ----------------
 def generate_image_huggingface(prompt, model_id="stabilityai/stable-diffusion-xl-base-1.0"):
@@ -48,7 +41,10 @@ def generate_image_huggingface(prompt, model_id="stabilityai/stable-diffusion-xl
 
     api_url = f"https://api-inference.huggingface.co/models/{model_id}"
     headers = {"Authorization": f"Bearer {api_token}"}
-    payload = {"inputs": prompt}
+
+    payload = {
+        "inputs": prompt,
+    }
 
     print(f"🔹 Hugging Face API को रिक्वेस्ट भेज रहा है...")
     response = requests.post(api_url, headers=headers, json=payload)
@@ -59,7 +55,9 @@ def generate_image_huggingface(prompt, model_id="stabilityai/stable-diffusion-xl
         response = requests.post(api_url, headers=headers, json=payload)
 
     if response.status_code != 200:
-        raise Exception(f"❌ Hugging Face API Error: {response.status_code}, {response.text}")
+        error_message = f"❌ Hugging Face API Error: {response.status_code}, {response.text}"
+        print(error_message)
+        raise Exception(error_message)
 
     image_bytes = response.content
     img_path = os.path.join(VIDEOS_DIR, "frame.png")
@@ -87,8 +85,7 @@ def get_random_music():
 def create_video(image_path, audio_path, output_path="final_video.mp4"):
     try:
         print("🔹 वीडियो बना रहा है...")
-        clip_duration = 10
-
+        clip_duration = random.randint(10,30)  # 10-30s random length
         clip = ImageClip(image_path).set_duration(clip_duration)
 
         if audio_path and os.path.exists(audio_path):
@@ -118,7 +115,7 @@ def upload_to_youtube(video_path, title="AI Short Video", description="Auto-gene
                 "snippet": {
                     "title": title,
                     "description": description,
-                    "tags": ["AI", "Shorts", "Quotes", "Motivation"],
+                    "tags": HASHTAGS,
                     "categoryId": "22"
                 },
                 "status": {"privacyStatus": "private"}
@@ -137,13 +134,23 @@ def upload_to_youtube(video_path, title="AI Short Video", description="Auto-gene
 # ---------------- MAIN PIPELINE ----------------
 if __name__ == "__main__":
     try:
-        prompt = "Vertical 1080x1920 YouTube Short background of a dog, ultra-realistic cinematic, trending on YouTube Shorts"
+        concept = random.choice(VIRAL_CONCEPTS)
+        prompt = f"Vertical 1080x1920 YouTube Short background of a {concept}, ultra-realistic cinematic, trending on YouTube Shorts"
+        description = f"AI-generated {concept} video for YouTube Shorts. Viral, trending content! {' '.join(HASHTAGS)}"
+
         print(f"📝 Prompt: {prompt}")
 
+        # 1️⃣ Generate image
         img_path = generate_image_huggingface(prompt)
+
+        # 2️⃣ Pick music
         music_path = get_random_music()
+
+        # 3️⃣ Create video
         video_path = create_video(img_path, music_path)
-        upload_to_youtube(video_path, title=f"{prompt} #shorts", description="AI Generated Viral Short")
+
+        # 4️⃣ Upload to YouTube
+        upload_to_youtube(video_path, title=f"{concept.capitalize()} Video #Shorts", description=description)
 
         print("🎉 Pipeline complete!")
 
