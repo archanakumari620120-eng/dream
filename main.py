@@ -1,95 +1,134 @@
 import os
+import json
 import random
-import base64
 import traceback
 import requests
 from time import sleep
+import yt_dlp
 
-# MoviePy for video
+# Video processing
 from moviepy.editor import ImageClip, AudioFileClip, vfx
 
 # YouTube API
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 
-# Gemini API
+# Gemini AI
 import google.generativeai as genai
 
 # ---------------- CONFIG & DIRECTORIES ----------------
 VIDEOS_DIR = "videos"
+MUSIC_DIR = "music"
 os.makedirs(VIDEOS_DIR, exist_ok=True)
+os.makedirs(MUSIC_DIR, exist_ok=True)
 
-# ---------------- CHECK SECRETS ----------------
-HF_API_TOKEN = os.getenv("HF_API_TOKEN")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-TOKEN_JSON_PATH = "token.json"
+# ---------------- SECRETS CHECK ----------------
+HF_TOKEN = os.getenv("HF_API_TOKEN")
+GEMINI_KEY = os.getenv("GEMINI_API_KEY")
+TOKEN_JSON = os.getenv("TOKEN_JSON")
 
-if not (HF_API_TOKEN and GEMINI_API_KEY and os.path.exists(TOKEN_JSON_PATH)):
+if not HF_TOKEN or not GEMINI_KEY or not TOKEN_JSON:
     raise ValueError("❌ Missing secrets! Check HF_API_TOKEN, GEMINI_API_KEY, TOKEN_JSON")
+else:
+    print("✅ All secrets loaded")
 
-print("✅ All secrets loaded")
+# ---------------- GEMINI SETUP ----------------
+genai.configure(api_key=GEMINI_KEY)
 
-genai.configure(api_key=GEMINI_API_KEY)
-
-# ---------------- GEMINI: Generate title, description, tags ----------------
+# ---------------- METADATA GENERATION ----------------
 def generate_metadata():
-    prompt = (
-        "Generate a viral YouTube Short concept with:\n"
-        "- Title (catchy)\n"
-        "- Description (50-100 words, engaging)\n"
-        "- 5-10 tags\n"
-        "- 3 hashtags\n"
-        "Return as JSON object with keys: title, description, tags, hashtags."
+    user_prompt = (
+        "Generate a trending, viral YouTube Shorts video concept. "
+        "Return JSON with keys: title, description, tags (list), hashtags (list). "
+        "Make it unique, catchy, short, and viral on YouTube Shorts."
     )
     try:
-        response = genai.chat(messages=[{"content": prompt}])
-        content = response.last.strip()
-        import json
+        response = genai.chat(model="gemini-1.5-flash", messages=[{"content": user_prompt}])
+        content = response.last or "{}"
         data = json.loads(content)
         return data
     except Exception as e:
-        print(f"❌ Gemini metadata error: {e}")
-        raise
+        print(f"❌ Error generating metadata: {e}")
+        return {"title": "Animal Video", "description": "AI Generated Short", "tags": ["AI","Shorts"], "hashtags":["#AI","#Shorts"]}
 
-# ---------------- HUGGING FACE IMAGE GENERATION ----------------
-def generate_image(prompt, model_id="stabilityai/stable-diffusion-xl-base-1.0"):
-    headers = {"Authorization": f"Bearer {HF_API_TOKEN}"}
+# ---------------- IMAGE GENERATION ----------------
+def generate_image_huggingface(prompt, model_id="stabilityai/stable-diffusion-xl-base-1.0"):
+    headers = {"Authorization": f"Bearer {HF_TOKEN}"}
+    api_url = f"https://api-inference.huggingface.co/models/{model_id}"
     payload = {"inputs": prompt}
 
     print("🔹 Hugging Face API request...")
-    response = requests.post(f"https://api-inference.huggingface.co/models/{model_id}",
-                             headers=headers, json=payload)
+    response = requests.post(api_url, headers=headers, json=payload)
+    if response.status_code == 503:
+        print("⏳ Model loading, waiting 30s...")
+        sleep(30)
+        response = requests.post(api_url, headers=headers, json=payload)
     if response.status_code != 200:
         raise Exception(f"Hugging Face API Error: {response.status_code}, {response.text}")
-    
+
     img_path = os.path.join(VIDEOS_DIR, "frame.png")
     with open(img_path, "wb") as f:
         f.write(response.content)
     print(f"✅ Image saved: {img_path}")
     return img_path
 
-# ---------------- VIDEO CREATION ----------------
-def create_video(image_path, audio_path=None, output_path="final_video.mp4"):
+# ---------------- COPYRIGHT-FREE MUSIC DOWNLOAD ----------------
+def download_copyright_free_music():
+    """
+    YouTube copyright-free playlist se random music download karo.
+    """
+    playlist_url = "https://www.youtube.com/playlist?list=PLzCxunOM5WFI6H2k8zJpE7E5Wdl66iRSu"  # example
+    ydl_opts = {
+        "format": "bestaudio/best",
+        "outtmpl": os.path.join(MUSIC_DIR, "%(title)s.%(ext)s"),
+        "quiet": True,
+        "noplaylist": False,
+        "ignoreerrors": True,
+        "postprocessors": [{
+            "key": "FFmpegExtractAudio",
+            "preferredcodec": "mp3",
+            "preferredquality": "192",
+        }],
+    }
     try:
-        duration = 10
-        clip = ImageClip(image_path).set_duration(duration)
-        if audio_path:
-            audio = AudioFileClip(audio_path)
-            if audio.duration < duration:
-                audio = audio.fx(vfx.loop, duration=duration)
-            clip = clip.set_audio(audio.subclip(0, duration))
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([playlist_url])
+        files = [os.path.join(MUSIC_DIR, f) for f in os.listdir(MUSIC_DIR) if f.endswith(".mp3")]
+        if files:
+            chosen = random.choice(files)
+            print(f"🎵 Music selected: {chosen}")
+            return chosen
+        else:
+            print("⚠️ No music downloaded, video will be silent.")
+            return None
+    except Exception as e:
+        print(f"❌ Music download error: {e}")
+        return None
+
+# ---------------- VIDEO CREATION ----------------
+def create_video(image_path, audio_path, output_path="final_video.mp4"):
+    try:
+        clip_duration = 10
+        clip = ImageClip(image_path).set_duration(clip_duration)
+        if audio_path and os.path.exists(audio_path):
+            audio_clip = AudioFileClip(audio_path)
+            if audio_clip.duration < clip_duration:
+                audio_clip = audio_clip.fx(vfx.loop, duration=clip_duration)
+            clip = clip.set_audio(audio_clip.subclip(0, clip_duration))
         clip.write_videofile(output_path, fps=24, codec="libx264", audio_codec="aac")
         print(f"✅ Video ready: {output_path}")
         return output_path
     except Exception as e:
-        print(f"❌ Video creation error: {e}")
+        print(f"❌ Error creating video: {e}")
         traceback.print_exc()
         raise
 
 # ---------------- YOUTUBE UPLOAD ----------------
-def upload_to_youtube(video_path, title, description, tags):
+def upload_to_youtube(video_path, title, description, tags, privacy="public"):
     try:
-        creds = Credentials.from_authorized_user_file(TOKEN_JSON_PATH, ["https://www.googleapis.com/auth/youtube.upload"])
+        with open("token.json", "w") as f:
+            f.write(TOKEN_JSON)
+        creds = Credentials.from_authorized_user_file("token.json", ["https://www.googleapis.com/auth/youtube.upload"])
         youtube = build("youtube", "v3", credentials=creds)
         request = youtube.videos().insert(
             part="snippet,status",
@@ -100,13 +139,13 @@ def upload_to_youtube(video_path, title, description, tags):
                     "tags": tags,
                     "categoryId": "22"
                 },
-                "status": {"privacyStatus": "public"}
+                "status": {"privacyStatus": privacy}
             },
             media_body=video_path
         )
         response = request.execute()
         print(f"✅ Uploaded! Video ID: {response.get('id')}")
-        return response.get('id')
+        return response.get("id")
     except Exception as e:
         print(f"❌ YouTube upload error: {e}")
         traceback.print_exc()
@@ -115,23 +154,16 @@ def upload_to_youtube(video_path, title, description, tags):
 # ---------------- MAIN PIPELINE ----------------
 if __name__ == "__main__":
     try:
-        # 1️⃣ Generate metadata
-        meta = generate_metadata()
-        title = meta["title"]
-        description = meta["description"]
-        tags = meta["tags"]
+        metadata = generate_metadata()
+        prompt = f"Vertical 1080x1920 YouTube Short background of {metadata['title']}, ultra-realistic cinematic, trending on YouTube Shorts"
+        print(f"📝 Prompt for image: {prompt}")
 
-        # 2️⃣ Generate image for concept
-        concept_prompt = title + " viral trending YouTube Short image"
-        img_path = generate_image(concept_prompt)
+        img_path = generate_image_huggingface(prompt)
+        music_path = download_copyright_free_music()
+        video_path = create_video(img_path, music_path)
+        upload_to_youtube(video_path, title=metadata['title'], description=metadata['description'], tags=metadata['tags'], privacy="public")
 
-        # 3️⃣ Create video
-        video_path = create_video(img_path)
-
-        # 4️⃣ Upload to YouTube
-        upload_to_youtube(video_path, title, description, tags)
         print("🎉 Pipeline complete!")
-
     except Exception as e:
         print(f"❌ Pipeline failed: {e}")
         traceback.print_exc()
