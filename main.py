@@ -10,7 +10,7 @@ import google.generativeai as genai
 
 # ========= CONFIG =========
 VIDEOS_DIR = "videos"
-MUSIC_FILE = "music.mp3"   # कोई copyright-free mp3 डाल दो repo में
+MUSIC_FILE = "music.mp3"   # copyright-free mp3
 DURATION = 30              # video length (seconds)
 WIDTH, HEIGHT = 1080, 1920 # Shorts format
 # ==========================
@@ -24,13 +24,10 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 def generate_image(prompt):
     try:
         genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel('imagen-3-flash')
+        model = genai.GenerativeModel("imagen-3-flash")
 
-        # API Call
-        response = model.generate_content(
-            prompt,
-            generation_config={"sample_count": 1}
-        )
+        # API Call (no sample_count / candidate_count needed)
+        response = model.generate_content(prompt)
 
         # Base64 निकालना
         image_b64 = response.candidates[0].content.parts[0].inline_data.data
@@ -109,4 +106,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
+        
