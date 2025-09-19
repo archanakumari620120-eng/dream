@@ -1,41 +1,38 @@
-name: Auto YouTube Shorts (Hugging Face)
+name: AI Shorts Automation
 
-# Schedule: every 5 hours
 on:
   schedule:
-    - cron: '0 */5 * * *'   # every 5 hours
-  workflow_dispatch:        # manual trigger option
+    - cron: "0 */5 * * *"   # ⏰ Har 5 ghante chalega
+  workflow_dispatch:         # 🔘 Manual run ka option bhi hoga
 
 jobs:
-  build-and-run:
+  build:
     runs-on: ubuntu-latest
 
-    env:
-      HF_API_TOKEN: ${{ secrets.HF_API_TOKEN }}
-      YOUTUBE_TOKEN_JSON: ${{ secrets.TOKEN_JSON }}
-
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      # 1️⃣ Code checkout
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
+      # 2️⃣ Python setup
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install moviepy google-api-python-client google-auth-httplib2 google-auth-oauthlib requests
+      # 3️⃣ Dependencies install
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-    - name: Prepare YouTube token.json
-      run: |
-        echo "$YOUTUBE_TOKEN_JSON" > token.json
-        echo "✅ token.json created from secret"
+      # 4️⃣ Hugging Face + YouTube secrets save karo
+      - name: Setup secrets
+        run: |
+          echo "${{ secrets.HF_API_TOKEN }}" > hf_token.txt
+          echo "${{ secrets.TOKEN_JSON }}" > token.json
 
-    - name: Run main.py
-      run: |
-        echo "🔹 Running main.py pipeline..."
-        python main.py
+      # 5️⃣ Run main.py
+      - name: Run pipeline
+        run: python main.py
         
