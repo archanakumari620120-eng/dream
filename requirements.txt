@@ -1,9 +1,12 @@
-moviepy==1.0.3
-google.generativeai
-pillow
-google-api-python-client
-google-auth>=2.35.0
 google-auth-oauthlib>=1.2.1
 google-auth-httplib2
 requests>=2.32.3
 yt_dlp
+google-cloud-aiplatform>=2.18.0
+google-api-python-client>=2.100.0
+google-auth>=2.23.0
+moviepy>=1.0.3
+imageio>=2.31.1
+imageio-ffmpeg>=0.4.10
+Pillow>=10.0.1
+torch>=2.1.0
