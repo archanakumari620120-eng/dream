@@ -19,6 +19,22 @@ VIDEOS_DIR = "videos"
 MUSIC_DIR = "music"
 os.makedirs(VIDEOS_DIR, exist_ok=True)
 
+# ---------------- HELPER: Setup Vertex AI Credentials from secret ----------------
+def setup_vertex_credentials():
+    try:
+        json_secret = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")  # secret content
+        if json_secret:
+            with NamedTemporaryFile(delete=False, suffix=".json") as f:
+                f.write(json_secret.encode())
+                os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = f.name
+            print("✅ Vertex AI credentials set from secret.")
+        else:
+            print("⚠️ GOOGLE_APPLICATION_CREDENTIALS_JSON not found. Using system path.")
+    except Exception as e:
+        print(f"❌ Error setting up Vertex credentials: {e}")
+        traceback.print_exc()
+        raise
+
 # ---------------- VERTEX AI IMAGE GENERATION ----------------
 def generate_image_vertex(prompt, project_id, location="us-central1", model_id="image-bison-001"):
     try:
@@ -31,7 +47,6 @@ def generate_image_vertex(prompt, project_id, location="us-central1", model_id="
         print("🔹 Sending request to Vertex AI model...")
         response = client.predict(endpoint=endpoint, instances=[instance])
         
-        # Vertex AI returns base64-encoded image
         image_b64 = response.predictions[0]['image_base64']
         image_data = base64.b64decode(image_b64)
 
@@ -108,9 +123,11 @@ def upload_to_youtube(video_path, title="AI Short Video", description="Auto-gene
 # ---------------- MAIN PIPELINE ----------------
 if __name__ == "__main__":
     try:
+        setup_vertex_credentials()
+
         quote = "Life is what happens when you're busy making other plans."
 
-        PROJECT_ID = os.getenv("GCP_PROJECT_ID")  # Vertex AI Project ID
+        PROJECT_ID = os.getenv("GCP_PROJECT_ID")
         LOCATION = "us-central1"
         MODEL_ID = "image-bison-001"
 
