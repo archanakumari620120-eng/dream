@@ -1,9 +1,16 @@
 import os
 import base64
-import traceback
 import random
-import google.generativeai as genai
+import traceback
+from tempfile import NamedTemporaryFile
+
+# Vertex AI
+from google.cloud import aiplatform
+
+# Video processing
 from moviepy.editor import ImageClip, AudioFileClip
+
+# YouTube API
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 
@@ -12,24 +19,20 @@ VIDEOS_DIR = "videos"
 MUSIC_DIR = "music"
 os.makedirs(VIDEOS_DIR, exist_ok=True)
 
-# ---------------- IMAGE GENERATION ----------------
-def generate_image(prompt):
+# ---------------- VERTEX AI IMAGE GENERATION ----------------
+def generate_image_vertex(prompt, project_id, location="us-central1", model_id="image-bison-001"):
     try:
-        print("🔹 Configuring Gemini API...")
-        genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+        print("🔹 Initializing Vertex AI client...")
+        client = aiplatform.gapic.PredictionServiceClient()
 
-        model = genai.GenerativeModel('gemini-1.5-flash-latest')
+        endpoint = f"projects/{project_id}/locations/{location}/publishers/google/models/{model_id}"
+        instance = {"prompt": f"High-quality, vertical (1080x1920) YouTube Short background image for quote: '{prompt}'"}
 
-        image_prompt = (
-            f"Generate a single, high-quality, vertical (1080x1920) image suitable for a YouTube Short background. "
-            f"The image should visually represent this quote: '{prompt}'"
-        )
-
-        print("🔹 Sending request to generate image...")
-        response = model.generate_content([image_prompt])
-
-        # ✅ Extract base64 image
-        image_b64 = response._result.response.candidates[0].content[0].image.image_base64
+        print("🔹 Sending request to Vertex AI model...")
+        response = client.predict(endpoint=endpoint, instances=[instance])
+        
+        # Vertex AI returns base64-encoded image
+        image_b64 = response.predictions[0]['image_base64']
         image_data = base64.b64decode(image_b64)
 
         img_path = os.path.join(VIDEOS_DIR, "frame.png")
@@ -40,10 +43,8 @@ def generate_image(prompt):
         return img_path
 
     except Exception as e:
-        print(f"❌ Error generating image: {e}")
+        print(f"❌ Error generating image via Vertex AI: {e}")
         traceback.print_exc()
-        if 'response' in locals():
-            print("Full API Response:", response)
         raise
 
 # ---------------- MUSIC SELECTION ----------------
@@ -63,7 +64,7 @@ def get_random_music():
 def create_video(image_path, audio_path, output_path="final_video.mp4"):
     try:
         print("🔹 Creating video...")
-        clip = ImageClip(image_path).set_duration(10)  # default 10 sec
+        clip = ImageClip(image_path).set_duration(10)
         if audio_path and os.path.exists(audio_path):
             audio_clip = AudioFileClip(audio_path)
             clip = clip.set_audio(audio_clip).set_duration(audio_clip.duration)
@@ -91,9 +92,7 @@ def upload_to_youtube(video_path, title="AI Short Video", description="Auto-gene
                     "tags": ["AI", "Shorts"],
                     "categoryId": "22"
                 },
-                "status": {
-                    "privacyStatus": "private"
-                }
+                "status": {"privacyStatus": "private"}
             },
             media_body=video_path
         )
@@ -110,18 +109,23 @@ def upload_to_youtube(video_path, title="AI Short Video", description="Auto-gene
 if __name__ == "__main__":
     try:
         quote = "Life is what happens when you're busy making other plans."
+
+        PROJECT_ID = os.getenv("GCP_PROJECT_ID")  # Vertex AI Project ID
+        LOCATION = "us-central1"
+        MODEL_ID = "image-bison-001"
+
         print(f"📝 Quote: {quote}")
 
-        # 1️⃣ Image generation
-        img_path = generate_image(quote)
+        # 1️⃣ Generate image
+        img_path = generate_image_vertex(quote, PROJECT_ID, LOCATION, MODEL_ID)
 
-        # 2️⃣ Music selection
+        # 2️⃣ Select music
         music_path = get_random_music()
 
-        # 3️⃣ Video creation
+        # 3️⃣ Create video
         video_path = create_video(img_path, music_path)
 
-        # 4️⃣ YouTube upload
+        # 4️⃣ Upload to YouTube
         upload_to_youtube(video_path, title=quote, description="Auto-generated Short using AI")
 
         print("🎉 Pipeline completed successfully!")
