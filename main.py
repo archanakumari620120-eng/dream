@@ -1,3 +1,10 @@
+# ---------------- DEBUG SECRET CHECK ----------------
+hf_token = os.getenv("HF_API_TOKEN")
+if not hf_token:
+    raise ValueError("❌ HF_API_TOKEN missing! Check GitHub Secrets.")
+else:
+    print("✅ HF_API_TOKEN successfully loaded (length:", len(hf_token), ")")
+    
 import os
 import random
 import requests
