@@ -1,33 +1,33 @@
-name: YouTube Auto Upload
+name: Auto YouTube Shorts
 
 on:
-  schedule:
-    - cron: "0 */6 * * *"   # हर 6 घंटे में run होगा
-  workflow_dispatch:         # manually run भी कर सकते हो
+  push:
+    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
-  upload:
+  build-and-run:
     runs-on: ubuntu-latest
 
+    env:
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+
     steps:
-      - name: Checkout Repo
-        uses: actions/checkout@v4
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
 
-      - name: Run Script
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          TOKEN_JSON: ${{ secrets.TOKEN_JSON }}
-          CLIENT_SECRET_JSON: ${{ secrets.CLIENT_SECRET_JSON }}
-        run: |
-          python main.py
-          
+    - name: Run main.py
+      run: |
+        python main.py
+        
