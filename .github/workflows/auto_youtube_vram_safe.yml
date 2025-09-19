@@ -2,19 +2,19 @@ name: AI Shorts Automation
 
 on:
   schedule:
-    - cron: "0 */5 * * *"   # Run every 5 hours
-  workflow_dispatch:         # Manual trigger
+    - cron: "0 */5 * * *"   # ⏰ हर 5 घंटे चलेगा
+  workflow_dispatch:         # 🔘 Manual run option
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout repo
+      # 1️⃣ Checkout code
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      # 2️⃣ Setup Python
+      # 2️⃣ Python setup
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
@@ -26,19 +26,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # 4️⃣ Setup secrets as environment variables
+      # 4️⃣ Setup secrets
       - name: Setup secrets
         run: |
-          echo "${{ secrets.CLIENT_SECRET_JSON }}" > client_secret.json
           echo "${{ secrets.TOKEN_JSON }}" > token.json
         env:
           HF_API_TOKEN: ${{ secrets.HF_API_TOKEN }}
 
-      # 5️⃣ Run main.py
+      # 5️⃣ Run pipeline
       - name: Run pipeline
         run: python main.py
         env:
           HF_API_TOKEN: ${{ secrets.HF_API_TOKEN }}
-          CLIENT_SECRET_JSON: ${{ secrets.CLIENT_SECRET_JSON }}
-          TOKEN_JSON: ${{ secrets.TOKEN_JSON }}
           
