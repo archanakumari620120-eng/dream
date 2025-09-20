@@ -80,7 +80,7 @@ def generate_image_huggingface(prompt, model_id="stabilityai/stable-diffusion-xl
     payload = {"inputs": f"Vertical (1080x1920), {prompt}, cinematic, high detail, trending on artstation"}
 
     print(f"🖼️ Requesting image from Hugging Face for prompt: {prompt}")
-    response = requests.post(api_url, headers=headers, json=payload)
+    response = requests.post(f"https://api-inference.huggingface.co/models/{model_id}
 
     if response.status_code == 503:
         print("⏳ Model is loading, waiting for 30 seconds...")
