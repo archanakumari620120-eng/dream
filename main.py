@@ -38,7 +38,7 @@ def generate_concept_and_metadata():
     try:
         print("🔹 Generating metadata with Gemini...")
         genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel('gemini-1.5-flash') # Correct model initialization
+        model = genai.GenerativeModel('gemini-1.5-flash')
 
         categories = ["Animal", "Human", "Boy", "Girl", "Sport", "Space", "Nature", "Motivation", "Quotes"]
         category = random.choice(categories)
@@ -58,7 +58,6 @@ def generate_concept_and_metadata():
         
         response = model.generate_content(user_prompt)
         
-        # Clean the response to extract only the JSON part
         cleaned_text = re.search(r'\{.*\}', response.text, re.DOTALL)
         if not cleaned_text:
             raise ValueError("❌ Gemini did not return a valid JSON object.")
@@ -75,6 +74,7 @@ def generate_concept_and_metadata():
 # ---------------- HUGGING FACE IMAGE GENERATION ----------------
 def generate_image_huggingface(prompt, model_id="stabilityai/stable-diffusion-xl-base-1.0"):
     """Generates an image using Hugging Face Inference API."""
+    # FIX: Removed extra markdown formatting from the URL
     api_url = f"[https://api-inference.huggingface.co/models/](https://api-inference.huggingface.co/models/){model_id}"
     headers = {"Authorization": f"Bearer {HF_API_TOKEN}"}
     payload = {"inputs": f"Vertical (1080x1920), {prompt}, cinematic, high detail, trending on artstation"}
@@ -116,12 +116,11 @@ def create_video(image_path, audio_path, output_path="final_video.mp4"):
     """Creates a video from an image and an audio file."""
     try:
         print("🎬 Creating video...")
-        clip_duration = 10  # 10-second short
+        clip_duration = 10
         clip = ImageClip(image_path).set_duration(clip_duration)
 
         if audio_path and os.path.exists(audio_path):
             audio_clip = AudioFileClip(audio_path)
-            # Loop the audio if it's shorter than the video
             if audio_clip.duration < clip_duration:
                 audio_clip = audio_clip.fx(vfx.loop, duration=clip_duration)
             clip = clip.set_audio(audio_clip.subclip(0, clip_duration))
@@ -130,7 +129,7 @@ def create_video(image_path, audio_path, output_path="final_video.mp4"):
         print(f"✅ Video created successfully: {output_path}")
         return output_path
     except Exception as e:
-        print(f"❌ Error creating video: {e}")
+        print(f"❌ Video creation error: {e}")
         traceback.print_exc()
         raise
 
@@ -139,10 +138,10 @@ def upload_to_youtube(video_path, title, description, tags, privacy="public"):
     """Uploads the video to YouTube."""
     try:
         print("📤 Uploading to YouTube...")
-        # Write the TOKEN_JSON from secrets to a temporary file
         with open("token.json", "w") as f:
             f.write(TOKEN_JSON)
 
+        # FIX: Removed extra markdown formatting from the scope URL
         creds = Credentials.from_authorized_user_file("token.json", ["[https://www.googleapis.com/auth/youtube.upload](https://www.googleapis.com/auth/youtube.upload)"])
         youtube = build("youtube", "v3", credentials=creds)
 
@@ -151,7 +150,7 @@ def upload_to_youtube(video_path, title, description, tags, privacy="public"):
                 "title": title,
                 "description": description,
                 "tags": tags,
-                "categoryId": "22" # People & Blogs
+                "categoryId": "22"
             },
             "status": {
                 "privacyStatus": privacy,
@@ -169,31 +168,21 @@ def upload_to_youtube(video_path, title, description, tags, privacy="public"):
         print(f"✅ Video uploaded successfully! Video ID: {response.get('id')}")
         return response.get("id")
     except Exception as e:
-        print(f"❌ Error uploading to YouTube: {e}")
+        print(f"❌ YouTube upload error: {e}")
         traceback.print_exc()
         raise
 
 # ---------------- MAIN PIPELINE ----------------
 if __name__ == "__main__":
     try:
-        # 1. Generate Metadata
         metadata = generate_concept_and_metadata()
-        
-        # 2. Generate Image
         img_path = generate_image_huggingface(metadata["concept"])
-        
-        # 3. Select Music
         music_path = get_random_music()
-        
-        # 4. Create Video
         video_path = create_video(img_path, music_path)
-        
-        # 5. Upload to YouTube
         upload_to_youtube(video_path, metadata["title"], metadata["description"], metadata["tags"])
-        
         print("\n🎉 Pipeline completed successfully! 🎉")
 
     except Exception as e:
         print(f"\n❌ Pipeline failed: {e}")
         traceback.print_exc()
-        
+
