@@ -73,14 +73,15 @@ def generate_concept_and_metadata():
 # ---------------- HUGGING FACE IMAGE GENERATION ----------------
 def generate_image_huggingface(prompt, model_id="stabilityai/stable-diffusion-xl-base-1.0"):
     """Generates an image using Hugging Face Inference API."""
-    # THIS IS THE CORRECTED LINE:
+    
+    # <<< THIS IS THE CORRECTED LINE. The URL must be a simple string.
     api_url = f"[https://api-inference.huggingface.co/models/](https://api-inference.huggingface.co/models/){model_id}"
     
     headers = {"Authorization": f"Bearer {HF_API_TOKEN}"}
     payload = {"inputs": f"Vertical (1080x1920), {prompt}, cinematic, high detail, trending on artstation"}
 
     print(f"🖼️ Requesting image from Hugging Face for prompt: {prompt}")
-    response = requests.post(f"https://api-inference.huggingface.co/models/{model_id}
+    response = requests.post(api_url, headers=headers, json=payload)
 
     if response.status_code == 503:
         print("⏳ Model is loading, waiting for 30 seconds...")
@@ -170,4 +171,4 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\n❌ Pipeline failed: {e}")
         traceback.print_exc()
-        
+    
