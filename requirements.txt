@@ -1,6 +1,7 @@
 imageio>=2.31.1
 imageio-ffmpeg>=0.4.10
 Pillow>=10.0.1
+google-genai
 
 google-auth>=2.23.0
 google-auth-oauthlib>=1.0.0
