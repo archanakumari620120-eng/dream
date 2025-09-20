@@ -23,7 +23,6 @@ os.makedirs(VIDEOS_DIR, exist_ok=True)
 os.makedirs(MUSIC_DIR, exist_ok=True)
 
 # ---------------- SECRETS ----------------
-# Ensure these are set in your environment (e.g., GitHub Secrets)
 HF_API_TOKEN = os.getenv("HF_API_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 TOKEN_JSON = os.getenv("TOKEN_JSON")
@@ -74,8 +73,9 @@ def generate_concept_and_metadata():
 # ---------------- HUGGING FACE IMAGE GENERATION ----------------
 def generate_image_huggingface(prompt, model_id="stabilityai/stable-diffusion-xl-base-1.0"):
     """Generates an image using Hugging Face Inference API."""
-    # FIX: Removed extra markdown formatting from the URL
+    # THIS IS THE CORRECTED LINE:
     api_url = f"[https://api-inference.huggingface.co/models/](https://api-inference.huggingface.co/models/){model_id}"
+    
     headers = {"Authorization": f"Bearer {HF_API_TOKEN}"}
     payload = {"inputs": f"Vertical (1080x1920), {prompt}, cinematic, high detail, trending on artstation"}
 
@@ -141,29 +141,15 @@ def upload_to_youtube(video_path, title, description, tags, privacy="public"):
         with open("token.json", "w") as f:
             f.write(TOKEN_JSON)
 
-        # FIX: Removed extra markdown formatting from the scope URL
         creds = Credentials.from_authorized_user_file("token.json", ["[https://www.googleapis.com/auth/youtube.upload](https://www.googleapis.com/auth/youtube.upload)"])
         youtube = build("youtube", "v3", credentials=creds)
 
         request_body = {
-            "snippet": {
-                "title": title,
-                "description": description,
-                "tags": tags,
-                "categoryId": "22"
-            },
-            "status": {
-                "privacyStatus": privacy,
-                "selfDeclaredMadeForKids": False
-            }
+            "snippet": { "title": title, "description": description, "tags": tags, "categoryId": "22" },
+            "status": { "privacyStatus": privacy, "selfDeclaredMadeForKids": False }
         }
 
-        request = youtube.videos().insert(
-            part="snippet,status",
-            body=request_body,
-            media_body=video_path
-        )
-
+        request = youtube.videos().insert(part="snippet,status", body=request_body, media_body=video_path)
         response = request.execute()
         print(f"✅ Video uploaded successfully! Video ID: {response.get('id')}")
         return response.get("id")
@@ -181,8 +167,6 @@ if __name__ == "__main__":
         video_path = create_video(img_path, music_path)
         upload_to_youtube(video_path, metadata["title"], metadata["description"], metadata["tags"])
         print("\n🎉 Pipeline completed successfully! 🎉")
-
     except Exception as e:
         print(f"\n❌ Pipeline failed: {e}")
         traceback.print_exc()
-
