@@ -143,7 +143,8 @@ def upload_to_youtube(video_path, title, description, tags, privacy="public"):
         with open("token.json", "w") as f:
             f.write(TOKEN_JSON)
 
-        creds = Credentials.from_authorized_user_file("token.json", ["[https://www.googleapis.com/auth/youtube.upload](https://www.googleapis.com/auth/youtube.upload)"])
+        creds = Credentials.from_authorized_user_file("token.json", ["https://www.googleapis.com/auth/youtube.upload"])
+        
         youtube = build("youtube", "v3", credentials=creds)
 
         request_body = {
